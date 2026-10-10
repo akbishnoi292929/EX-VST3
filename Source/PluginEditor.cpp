@@ -132,7 +132,6 @@ void EXAudioProcessorEditor::mouseDown (const juce::MouseEvent& e)
 
     int clickX = e.x - waveArea.getX();
     float samplePerPixel = (float) buffer.getNumSamples() / (float) waveArea.getWidth();
-    int clickSample = (int) (clickX * samplePerPixel);
 
     draggedSliceIndex = -1;
     for (size_t i = 0; i < audioProcessor.getSlicePoints().size(); ++i)
@@ -207,8 +206,8 @@ void EXAudioProcessorEditor::paint (juce::Graphics& g)
             g.setColour (juce::Colour (0xffff2a42)); // Glowing Red
             g.drawLine (lineX, (float) waveArea.getY(), lineX, (float) waveArea.getBottom(), 2.0f);
 
-            // Drag handle at top
-            g.setColour (Colours::white);
+            // Drag handle at top (explicit juce::Colours::white)
+            g.setColour (juce::Colours::white);
             g.fillRect (lineX - 3.0f, (float) waveArea.getY(), 6.0f, 12.0f);
         }
     }
