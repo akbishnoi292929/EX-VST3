@@ -10,7 +10,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(JUCE_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(JUCE_BUILD_EXTRAS OFF CACHE BOOL "" FORCE)
 
-# Include JUCE via shallow git clone in workflow
+# Include JUCE
 if(NOT TARGET juce::juce_audio_utils)
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/JUCE")
         add_subdirectory(JUCE)
@@ -26,14 +26,14 @@ if(NOT TARGET juce::juce_audio_utils)
     endif()
 endif()
 
-# Plugin Target Configuration
+# Plugin Target Configuration (Synth mode enabled for MIDI & Piano Roll)
 juce_add_plugin(EX
     COMPANY_NAME "AK Bishnoi"
     PLUGIN_MANUFACTURER_CODE AkBi
     PLUGIN_CODE Ex01
     FORMATS VST3
     PRODUCT_NAME "EX"
-    IS_SYNTH FALSE
+    IS_SYNTH TRUE
     NEEDS_MIDI_INPUT TRUE
     NEEDS_MIDI_OUTPUT TRUE
     IS_MIDI_EFFECT FALSE
@@ -50,11 +50,12 @@ target_sources(EX
         Source/PluginEditor.h
 )
 
-# Link essential JUCE modules
+# Link essential JUCE modules including audio formats & DSP
 target_link_libraries(EX
     PRIVATE
         juce::juce_audio_utils
         juce::juce_audio_processors
+        juce::juce_audio_formats
         juce::juce_gui_basics
         juce::juce_graphics
         juce::juce_events
@@ -65,7 +66,7 @@ target_link_libraries(EX
         juce::juce_recommended_warning_flags
 )
 
-# Disable web browser / curl for lightweight Windows 7 compatibility
+# Optimize for lightweight Windows 7 compatibility
 target_compile_definitions(EX
     PUBLIC
         JUCE_WEB_BROWSER=0
@@ -74,6 +75,7 @@ target_compile_definitions(EX
         JUCE_DISPLAY_SPLASH_SCREEN=0
 )
 
+# MSVC Optimizations & Multi-threaded compilation
 if(MSVC)
     target_compile_options(EX PRIVATE /MP /W4)
 endif()
