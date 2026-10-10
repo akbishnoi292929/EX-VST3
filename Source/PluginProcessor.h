@@ -3,6 +3,8 @@
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_dsp/juce_dsp.h>
 
+enum class StemType { Master = 0, Vocals, Drums, Bass, Other };
+
 class EXAudioProcessor : public juce::AudioProcessor
 {
 public:
@@ -35,9 +37,16 @@ public:
     void loadAudioFile (const juce::File& file);
     void sliceAudio (int numSlices);
     void detectTransientsAndSlice();
+    void setSlicePosition (int index, int newSamplePos);
+    void triggerStemSeparation();
 
-    juce::AudioSampleBuffer& getAudioBuffer() { return loadedBuffer; }
+    juce::AudioSampleBuffer& getAudioBuffer() { return activeBuffer; }
     const std::vector<int>& getSlicePoints() const { return slicePoints; }
+    void selectStem (StemType stem);
+    StemType getCurrentStem() const { return currentStem; }
+
+    std::atomic<bool> isSeparating { false };
+    std::atomic<float> separationProgress { 0.0f };
 
     juce::AudioProcessorValueTreeState apvts;
     juce::AudioFormatManager formatManager;
@@ -45,17 +54,24 @@ public:
 private:
     juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
-    juce::AudioSampleBuffer loadedBuffer;
+    juce::AudioSampleBuffer masterBuffer;
+    juce::AudioSampleBuffer vocalBuffer;
+    juce::AudioSampleBuffer drumBuffer;
+    juce::AudioSampleBuffer bassBuffer;
+    juce::AudioSampleBuffer otherBuffer;
+    juce::AudioSampleBuffer activeBuffer;
+
+    StemType currentStem = StemType::Master;
     std::vector<int> slicePoints;
 
-    // Active Slice Playback State
     int currentPlaybackSlice = -1;
-    int currentSamplePosition = 0;
+    double currentSamplePosition = 0.0;
     bool isPlaying = false;
 
-    // DSP Units
+    // DSP Processors
     juce::dsp::Reverb reverb;
     juce::dsp::Reverb::Parameters reverbParams;
+    juce::dsp::StateVariableTPTFilter<float> filter;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (EXAudioProcessor)
 };
