@@ -38,7 +38,7 @@ EXAudioProcessorEditor::EXAudioProcessorEditor (EXAudioProcessor& p)
     infoBadgeLabel.setText ("KEY: -- | BPM: --", juce::dontSendNotification);
     infoBadgeLabel.setFont (juce::Font (12.0f, juce::Font::bold));
     infoBadgeLabel.setJustificationType (juce::Justification::centredRight);
-    infoBadgeLabel.setColour (juce::Label::textColourId, juce::Colour (0xff00f5d4)); // Neon Cyan
+    infoBadgeLabel.setColour (juce::Label::textColourId, juce::Colour (0xff00f5d4));
     addAndMakeVisible (infoBadgeLabel);
 
     // Transport & Smart Features
@@ -68,7 +68,6 @@ EXAudioProcessorEditor::EXAudioProcessorEditor (EXAudioProcessor& p)
         {
             juce::StringArray files;
             files.add (midiFile.getFullPathName());
-            startDragging ("MIDI Sequence", dragMidiBtn.getBounds());
             performExternalDragDropOfFiles (files, false);
         }
     };
