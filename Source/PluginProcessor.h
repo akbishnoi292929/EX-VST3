@@ -1,5 +1,7 @@
 #pragma once
 #include <juce_audio_processors/juce_audio_processors.h>
+#include <juce_audio_formats/juce_audio_formats.h>
+#include <juce_dsp/juce_dsp.h>
 
 class EXAudioProcessor : public juce::AudioProcessor
 {
@@ -30,6 +32,30 @@ public:
     void getStateInformation (juce::MemoryBlock& destData) override;
     void setStateInformation (const void* data, int sizeInBytes) override;
 
+    void loadAudioFile (const juce::File& file);
+    void sliceAudio (int numSlices);
+    void detectTransientsAndSlice();
+
+    juce::AudioSampleBuffer& getAudioBuffer() { return loadedBuffer; }
+    const std::vector<int>& getSlicePoints() const { return slicePoints; }
+
+    juce::AudioProcessorValueTreeState apvts;
+    juce::AudioFormatManager formatManager;
+
 private:
+    juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
+
+    juce::AudioSampleBuffer loadedBuffer;
+    std::vector<int> slicePoints;
+
+    // Active Slice Playback State
+    int currentPlaybackSlice = -1;
+    int currentSamplePosition = 0;
+    bool isPlaying = false;
+
+    // DSP Units
+    juce::dsp::Reverb reverb;
+    juce::dsp::Reverb::Parameters reverbParams;
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (EXAudioProcessor)
 };
