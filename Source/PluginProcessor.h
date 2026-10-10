@@ -72,7 +72,13 @@ private:
 
     StemType currentStem = StemType::Master;
     std::vector<int> slicePoints;
-    std::vector<int> diceSequence; // Random pattern indices
+    std::vector<int> diceSequence;
+
+    // Dice Playback State
+    bool isPlayingDice = false;
+    int currentDiceStep = 0;
+    int diceStepSamples = 0;
+    int diceStepTimer = 0;
 
     int currentPlaybackSlice = -1;
     double currentSamplePosition = 0.0;
@@ -80,7 +86,7 @@ private:
     std::atomic<bool> isAuditioning { false };
     int auditionSamplePos = 0;
 
-    // DSP Processors
+    // DSP Units
     juce::dsp::Reverb reverb;
     juce::dsp::Reverb::Parameters reverbParams;
     juce::dsp::StateVariableTPTFilter<float> filter;
