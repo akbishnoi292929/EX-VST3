@@ -40,6 +40,12 @@ public:
     void setSlicePosition (int index, int newSamplePos);
     void triggerStemSeparation();
 
+    // Playback, Dice & MIDI
+    void togglePlayPause();
+    bool getIsAuditioning() const { return isAuditioning.load(); }
+    void generateRandomMelodySequence();
+    juce::File exportCurrentSequenceAsMidi();
+
     juce::AudioSampleBuffer& getAudioBuffer() { return activeBuffer; }
     const std::vector<int>& getSlicePoints() const { return slicePoints; }
     void selectStem (StemType stem);
@@ -47,12 +53,15 @@ public:
 
     std::atomic<bool> isSeparating { false };
     std::atomic<float> separationProgress { 0.0f };
+    juce::String detectedKey { "A MIN" };
+    int detectedBpm { 140 };
 
     juce::AudioProcessorValueTreeState apvts;
     juce::AudioFormatManager formatManager;
 
 private:
     juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
+    void detectKeyAndBpm();
 
     juce::AudioSampleBuffer masterBuffer;
     juce::AudioSampleBuffer vocalBuffer;
@@ -63,10 +72,13 @@ private:
 
     StemType currentStem = StemType::Master;
     std::vector<int> slicePoints;
+    std::vector<int> diceSequence; // Random pattern indices
 
     int currentPlaybackSlice = -1;
     double currentSamplePosition = 0.0;
     bool isPlaying = false;
+    std::atomic<bool> isAuditioning { false };
+    int auditionSamplePos = 0;
 
     // DSP Processors
     juce::dsp::Reverb reverb;
