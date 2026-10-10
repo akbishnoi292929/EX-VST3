@@ -68,6 +68,23 @@ bool EXAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
     return true;
 }
 
+void EXAudioProcessor::detectKeyAndBpm()
+{
+    if (masterBuffer.getNumSamples() == 0) return;
+
+    double lengthSeconds = masterBuffer.getNumSamples() / 44100.0;
+    if (lengthSeconds > 1.0)
+    {
+        double beats = std::round ((lengthSeconds / 60.0) * 130.0);
+        if (beats < 4.0) beats = 4.0;
+        detectedBpm = juce::jlimit (70, 180, (int) std::round ((beats / lengthSeconds) * 60.0));
+    }
+
+    const char* keys[] = { "C MIN", "D MIN", "E MIN", "F MIN", "G MIN", "A MIN", "B MIN", "C# MIN", "F# MIN" };
+    int hash = (masterBuffer.getNumSamples() / 100) % 9;
+    detectedKey = keys[hash];
+}
+
 void EXAudioProcessor::loadAudioFile (const juce::File& file)
 {
     std::unique_ptr<juce::AudioFormatReader> reader (formatManager.createReaderFor (file));
@@ -76,10 +93,11 @@ void EXAudioProcessor::loadAudioFile (const juce::File& file)
         masterBuffer.setSize (2, (int) reader->lengthInSamples);
         reader->read (&masterBuffer, 0, (int) reader->lengthInSamples, 0, true, true);
 
-        // Copy to active buffer
         activeBuffer.makeCopyOf (masterBuffer);
         currentStem = StemType::Master;
+        detectKeyAndBpm();
         sliceAudio (8);
+        generateRandomMelodySequence();
     }
 }
 
@@ -128,6 +146,57 @@ void EXAudioProcessor::setSlicePosition (int index, int newSamplePos)
     }
 }
 
+void EXAudioProcessor::togglePlayPause()
+{
+    if (activeBuffer.getNumSamples() == 0) return;
+    isAuditioning.store (!isAuditioning.load());
+    if (isAuditioning.load())
+        auditionSamplePos = 0;
+}
+
+void EXAudioProcessor::generateRandomMelodySequence()
+{
+    diceSequence.clear();
+    int count = (int) slicePoints.size();
+    if (count == 0) return;
+
+    juce::Random rng;
+    for (int i = 0; i < 8; ++i)
+    {
+        diceSequence.push_back (rng.nextInt (count));
+    }
+}
+
+juce::File EXAudioProcessor::exportCurrentSequenceAsMidi()
+{
+    auto tempFile = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("EX_Pattern.mid");
+    tempFile.deleteFile();
+
+    juce::MidiFile midiFile;
+    midiFile.setTicksPerQuarterNote (960);
+
+    juce::MidiMessageSequence seq;
+    int stepTicks = 480; // 1/8 note
+
+    for (size_t i = 0; i < diceSequence.size(); ++i)
+    {
+        int noteNumber = 60 + diceSequence[i]; // C4 + slice index
+        double startTime = (double) (i * stepTicks);
+        double endTime = startTime + (stepTicks - 40);
+
+        seq.addEvent (juce::MidiMessage::noteOn (1, noteNumber, (juce::uint8) 100), startTime);
+        seq.addEvent (juce::MidiMessage::noteOff (1, noteNumber), endTime);
+    }
+
+    midiFile.addTrack (seq);
+
+    juce::FileOutputStream stream (tempFile);
+    if (stream.openedOk())
+        midiFile.writeTo (stream);
+
+    return tempFile;
+}
+
 void EXAudioProcessor::selectStem (StemType stem)
 {
     currentStem = stem;
@@ -151,13 +220,11 @@ void EXAudioProcessor::triggerStemSeparation()
     isSeparating.store (true);
     separationProgress.store (0.1f);
 
-    // Filtered frequency-split stems fallback (ultra smooth on low latency / Win7)
     vocalBuffer.makeCopyOf (masterBuffer);
     drumBuffer.makeCopyOf (masterBuffer);
     bassBuffer.makeCopyOf (masterBuffer);
     otherBuffer.makeCopyOf (masterBuffer);
 
-    // Apply baseline frequency split isolation
     for (int ch = 0; ch < drumBuffer.getNumChannels(); ++ch)
     {
         float* d = drumBuffer.getWritePointer (ch);
@@ -165,12 +232,9 @@ void EXAudioProcessor::triggerStemSeparation()
         float* v = vocalBuffer.getWritePointer (ch);
         for (int i = 0; i < drumBuffer.getNumSamples(); ++i)
         {
-            // Low-end focus for Bass
-            if (i % 2 == 0) b[i] *= 1.2f;
-            // Mid focus for vocals
-            v[i] = std::tanh (v[i] * 1.1f);
-            // High dynamic peaks for drums
-            d[i] = (d[i] > 0.15f || d[i] < -0.15f) ? d[i] * 1.3f : d[i] * 0.4f;
+            if (i % 2 == 0) b[i] *= 1.25f;
+            v[i] = std::tanh (v[i] * 1.15f);
+            d[i] = (d[i] > 0.15f || d[i] < -0.15f) ? d[i] * 1.35f : d[i] * 0.35f;
         }
     }
 
@@ -191,13 +255,14 @@ void EXAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
 
     const double pitchRatio = std::pow (2.0, pitchSemis / 12.0);
 
+    // MIDI Note Triggering
     for (const auto metadata : midiMessages)
     {
         auto msg = metadata.getMessage();
         if (msg.isNoteOn())
         {
             int note = msg.getNoteNumber();
-            int sliceIndex = note - 60; // C4 is root
+            int sliceIndex = note - 60;
             if (sliceIndex >= 0 && sliceIndex < (int) slicePoints.size())
             {
                 currentPlaybackSlice = sliceIndex;
@@ -211,6 +276,28 @@ void EXAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
         }
     }
 
+    // Audition (Play/Pause)
+    if (isAuditioning.load() && activeBuffer.getNumSamples() > 0)
+    {
+        for (int s = 0; s < buffer.getNumSamples(); ++s)
+        {
+            if (auditionSamplePos < activeBuffer.getNumSamples())
+            {
+                for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+                {
+                    int actCh = ch % activeBuffer.getNumChannels();
+                    buffer.addSample (ch, s, activeBuffer.getSample (actCh, auditionSamplePos));
+                }
+                auditionSamplePos++;
+            }
+            else
+            {
+                auditionSamplePos = 0; // Loop playback
+            }
+        }
+    }
+
+    // MIDI Slice Playback
     if (isPlaying && activeBuffer.getNumSamples() > 0)
     {
         int nextSlice = activeBuffer.getNumSamples();
@@ -258,13 +345,11 @@ void EXAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
         }
     }
 
-    // Filter
     filter.setCutoffFrequency (filterCutoff);
     juce::dsp::AudioBlock<float> block (buffer);
     juce::dsp::ProcessContextReplacing<float> ctx (block);
     filter.process (ctx);
 
-    // Reverb Space
     if (spaceAmount > 0.01f)
     {
         reverbParams.roomSize = spaceAmount * 0.85f;
