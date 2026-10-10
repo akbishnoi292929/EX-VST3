@@ -6,7 +6,7 @@ void EXAudioProcessorEditor::styleKnob (juce::Slider& s, juce::Label& l, const j
     s.setSliderStyle (juce::Slider::RotaryVerticalDrag);
     s.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 55, 16);
     s.setTextValueSuffix (suffix);
-    s.setColour (juce::Slider::rotarySliderFillColourId, juce::Colour (0xffff2a42)); // Neon Crimson
+    s.setColour (juce::Slider::rotarySliderFillColourId, juce::Colour (0xffff2a42));
     s.setColour (juce::Slider::rotarySliderOutlineColourId, juce::Colour (0xff252830));
     s.setColour (juce::Slider::thumbColourId, juce::Colours::white);
     s.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
@@ -35,12 +35,45 @@ EXAudioProcessorEditor::EXAudioProcessorEditor (EXAudioProcessor& p)
     headerLabel.setColour (juce::Label::textColourId, juce::Colours::white);
     addAndMakeVisible (headerLabel);
 
-    badgeLabel.setText ("AK BISHNOI AUDIO", juce::dontSendNotification);
-    badgeLabel.setFont (juce::Font (11.0f, juce::Font::bold));
-    badgeLabel.setColour (juce::Label::textColourId, juce::Colour (0xffff2a42));
-    addAndMakeVisible (badgeLabel);
+    infoBadgeLabel.setText ("KEY: -- | BPM: --", juce::dontSendNotification);
+    infoBadgeLabel.setFont (juce::Font (12.0f, juce::Font::bold));
+    infoBadgeLabel.setJustificationType (juce::Justification::centredRight);
+    infoBadgeLabel.setColour (juce::Label::textColourId, juce::Colour (0xff00f5d4)); // Neon Cyan
+    addAndMakeVisible (infoBadgeLabel);
 
-    // Buttons
+    // Transport & Smart Features
+    styleButton (playPauseBtn, juce::Colour (0xff242732));
+    styleButton (diceBtn, juce::Colour (0xff242732));
+    styleButton (dragMidiBtn, juce::Colour (0xff2d3142));
+
+    playPauseBtn.setButtonText (juce::CharPointer_UTF8 ("\xe2\x96\xb6 PLAY"));
+    diceBtn.setButtonText (juce::CharPointer_UTF8 ("\xf0\x9f\x8e\xb2 DICE"));
+    dragMidiBtn.setButtonText ("DRAG MIDI");
+
+    playPauseBtn.onClick = [this]() {
+        audioProcessor.togglePlayPause();
+        playPauseBtn.setButtonText (audioProcessor.getIsAuditioning() 
+            ? juce::CharPointer_UTF8 ("\xe2\x8f\xb8 PAUSE") 
+            : juce::CharPointer_UTF8 ("\xe2\x96\xb6 PLAY"));
+    };
+
+    diceBtn.onClick = [this]() {
+        audioProcessor.generateRandomMelodySequence();
+        repaint();
+    };
+
+    dragMidiBtn.onClick = [this]() {
+        auto midiFile = audioProcessor.exportCurrentSequenceAsMidi();
+        if (midiFile.existsAsFile())
+        {
+            juce::StringArray files;
+            files.add (midiFile.getFullPathName());
+            startDragging ("MIDI Sequence", dragMidiBtn.getBounds());
+            performExternalDragDropOfFiles (files, false);
+        }
+    };
+
+    // Chops Buttons
     styleButton (chop1_4Btn, juce::Colour (0xff1f2128));
     styleButton (chop1_8Btn, juce::Colour (0xff1f2128));
     styleButton (chop1_16Btn, juce::Colour (0xff1f2128));
@@ -104,7 +137,9 @@ EXAudioProcessorEditor::~EXAudioProcessorEditor()
 
 void EXAudioProcessorEditor::timerCallback()
 {
-    if (audioProcessor.isSeparating.load())
+    infoBadgeLabel.setText ("KEY: " + audioProcessor.detectedKey + " | BPM: " + juce::String (audioProcessor.detectedBpm), juce::dontSendNotification);
+
+    if (audioProcessor.isSeparating.load() || audioProcessor.getIsAuditioning())
         repaint();
 }
 
@@ -166,9 +201,9 @@ void EXAudioProcessorEditor::mouseUp (const juce::MouseEvent&)
 
 void EXAudioProcessorEditor::paint (juce::Graphics& g)
 {
-    g.fillAll (juce::Colour (0xff0e0f12)); // Obsidian black background
+    g.fillAll (juce::Colour (0xff0e0f12));
 
-    // Top Header Bar
+    // Header Bar
     g.setColour (juce::Colour (0xff14161c));
     g.fillRect (0, 0, getWidth(), 48);
     g.setColour (juce::Colour (0xff22252f));
@@ -184,7 +219,7 @@ void EXAudioProcessorEditor::paint (juce::Graphics& g)
     auto& buf = audioProcessor.getAudioBuffer();
     if (buf.getNumSamples() > 0)
     {
-        g.setColour (juce::Colour (0xff00f5d4)); // Neon Cyan Wave
+        g.setColour (juce::Colour (0xff00f5d4));
         auto numSamples = buf.getNumSamples();
         auto w = waveArea.getWidth();
         auto midY = waveArea.getCentreY();
@@ -203,10 +238,9 @@ void EXAudioProcessorEditor::paint (juce::Graphics& g)
         {
             int slicePos = audioProcessor.getSlicePoints()[i];
             float lineX = waveArea.getX() + ((slicePos / (float) numSamples) * w);
-            g.setColour (juce::Colour (0xffff2a42)); // Glowing Red
+            g.setColour (juce::Colour (0xffff2a42));
             g.drawLine (lineX, (float) waveArea.getY(), lineX, (float) waveArea.getBottom(), 2.0f);
 
-            // Drag handle at top (explicit juce::Colours::white)
             g.setColour (juce::Colours::white);
             g.fillRect (lineX - 3.0f, (float) waveArea.getY(), 6.0f, 12.0f);
         }
@@ -218,7 +252,7 @@ void EXAudioProcessorEditor::paint (juce::Graphics& g)
         g.drawText ("DROP SAMPLE HERE // MP3 / WAV", waveArea, juce::Justification::centred);
     }
 
-    // Lower Rack Background
+    // Lower Rack
     auto rackBounds = juce::Rectangle<int> (20, 330, getWidth() - 40, 170);
     g.setColour (juce::Colour (0xff14151b));
     g.fillRoundedRectangle (rackBounds.toFloat(), 6.0f);
@@ -228,25 +262,29 @@ void EXAudioProcessorEditor::paint (juce::Graphics& g)
 
 void EXAudioProcessorEditor::resized()
 {
-    headerLabel.setBounds (20, 10, 350, 28);
-    badgeLabel.setBounds (getWidth() - 170, 14, 150, 20);
+    headerLabel.setBounds (20, 10, 280, 28);
+    infoBadgeLabel.setBounds (getWidth() - 250, 14, 230, 20);
 
-    // Stem View Tabs
-    int tabW = 75;
+    // Stem View Tabs (Left)
+    int tabW = 68;
     int tabH = 26;
     int tabY = 58;
     masterTab.setBounds (20, tabY, tabW, tabH);
-    vocalTab.setBounds (100, tabY, tabW, tabH);
-    drumTab.setBounds (180, tabY, tabW, tabH);
-    bassTab.setBounds (260, tabY, tabW, tabH);
-    otherTab.setBounds (340, tabY, tabW, tabH);
+    vocalTab.setBounds (92, tabY, tabW, tabH);
+    drumTab.setBounds (164, tabY, tabW, tabH);
+    bassTab.setBounds (236, tabY, tabW, tabH);
+    otherTab.setBounds (308, tabY, tabW, tabH);
+
+    // Transport & Generative Controls (Middle)
+    playPauseBtn.setBounds (390, tabY, 65, tabH);
+    diceBtn.setBounds (460, tabY, 58, tabH);
+    dragMidiBtn.setBounds (523, tabY, 78, tabH);
 
     // Chops Buttons right aligned
-    chop1_4Btn.setBounds (getWidth() - 340, tabY, 45, tabH);
-    chop1_8Btn.setBounds (getWidth() - 290, tabY, 45, tabH);
-    chop1_16Btn.setBounds (getWidth() - 240, tabY, 45, tabH);
-    chopTransientBtn.setBounds (getWidth() - 190, tabY, 80, tabH);
-    stemSplitBtn.setBounds (getWidth() - 105, tabY, 85, tabH);
+    chop1_4Btn.setBounds (getWidth() - 175, tabY, 32, tabH);
+    chop1_8Btn.setBounds (getWidth() - 140, tabY, 32, tabH);
+    chop1_16Btn.setBounds (getWidth() - 105, tabY, 38, tabH);
+    stemSplitBtn.setBounds (getWidth() - 65, tabY, 45, tabH);
 
     // 6-Knob Rack Layout
     int startY = 345;
