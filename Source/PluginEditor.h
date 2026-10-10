@@ -5,6 +5,7 @@
 
 class EXAudioProcessorEditor : public juce::AudioProcessorEditor,
                                public juce::FileDragAndDropTarget,
+                               public juce::DragAndDropContainer,
                                public juce::Timer
 {
 public:
@@ -26,7 +27,12 @@ private:
     EXAudioProcessor& audioProcessor;
 
     juce::Label headerLabel;
-    juce::Label badgeLabel;
+    juce::Label infoBadgeLabel;
+
+    // Transport & Smart Buttons
+    juce::TextButton playPauseBtn;
+    juce::TextButton diceBtn;
+    juce::TextButton dragMidiBtn;
 
     // Chops & AI Controls
     juce::TextButton chop1_4Btn;
