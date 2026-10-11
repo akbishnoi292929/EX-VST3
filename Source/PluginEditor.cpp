@@ -140,9 +140,24 @@ void EXAudioProcessorEditor::drawRealistic3DCubeDice (juce::Graphics& g, float c
     }
 }
 
+bool EXAudioProcessorEditor::keyPressed (const juce::KeyPress& key)
+{
+    if (key.isKeyCode (juce::KeyPress::spaceKey))
+    {
+        audioProcessor.togglePlayback();
+        bool isPlay = audioProcessor.isPlayingActive();
+        playPauseButton.setButtonText (isPlay ? juce::CharPointer_UTF8 ("\xe2\x8f\xb8 PAUSE") : juce::CharPointer_UTF8 ("\xe2\x96\xb6 PLAY"));
+        playPauseButton.setColour (juce::TextButton::buttonColourId, isPlay ? juce::Colour (0xff9e1e1e) : juce::Colour (0xff1b633b));
+        return true;
+    }
+    return false;
+}
+
 EXAudioProcessorEditor::EXAudioProcessorEditor (EXAudioProcessor& p)
     : AudioProcessorEditor (&p), audioProcessor (p)
 {
+    setWantsKeyboardFocus (true);
+
     brandTitle.setText ("EX", juce::dontSendNotification);
     brandTitle.setFont (juce::Font (28.0f, juce::Font::bold));
     brandTitle.setColour (juce::Label::textColourId, juce::Colour (0xff9e1e1e));
@@ -230,14 +245,15 @@ EXAudioProcessorEditor::EXAudioProcessorEditor (EXAudioProcessor& p)
     setupGridBtn (btnTriplet1_6, "1/6T", GridDivision::Triplet1_6);
     setupGridBtn (btnTransient, "TRANS", GridDivision::Transient);
 
+    // Illuminated Hardware Play/Pause Button
     playPauseButton.setButtonText (juce::CharPointer_UTF8 ("\xe2\x96\xb6 PLAY"));
-    playPauseButton.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff2d3036));
+    playPauseButton.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff1b633b)); // Emerald Green
     playPauseButton.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
     playPauseButton.onClick = [this]() {
         audioProcessor.togglePlayback();
-        playPauseButton.setButtonText (audioProcessor.isPlayingActive()
-            ? juce::CharPointer_UTF8 ("\xe2\x8f\xb8 PAUSE")
-            : juce::CharPointer_UTF8 ("\xe2\x96\xb6 PLAY"));
+        bool isPlay = audioProcessor.isPlayingActive();
+        playPauseButton.setButtonText (isPlay ? juce::CharPointer_UTF8 ("\xe2\x8f\xb8 PAUSE") : juce::CharPointer_UTF8 ("\xe2\x96\xb6 PLAY"));
+        playPauseButton.setColour (juce::TextButton::buttonColourId, isPlay ? juce::Colour (0xff9e1e1e) : juce::Colour (0xff1b633b));
     };
     addAndMakeVisible (playPauseButton);
 
@@ -347,7 +363,6 @@ void EXAudioProcessorEditor::filesDropped (const juce::StringArray& files, int, 
 
 void EXAudioProcessorEditor::mouseDown (const juce::MouseEvent& e)
 {
-    // Direct click on Radar circle to trigger 3D Dice roll (No button outline!)
     if (radarCircleArea.contains (e.position))
     {
         audioProcessor.rollDiceAndGenerateMasterPattern();
@@ -419,7 +434,7 @@ void EXAudioProcessorEditor::paint (juce::Graphics& g)
     g.fillEllipse (20.0f, static_cast<float> (getHeight() - 23), 7.0f, 7.0f);
     g.fillEllipse (static_cast<float> (getWidth() - 27), static_cast<float> (getHeight() - 23), 7.0f, 7.0f);
 
-    // Circular Radar Area
+    // Circular Radar
     float cX = getWidth() * 0.5f;
     float cY = 185.0f;
     float r = 78.0f;
@@ -442,10 +457,8 @@ void EXAudioProcessorEditor::paint (juce::Graphics& g)
     g.setColour (juce::Colour (0x66ff3b30));
     g.drawLine (cX, cY, scanX, scanY, 1.5f);
 
-    // Draw Realistic 3D Cube Dice
     drawRealistic3DCubeDice (g, cX, cY, 52.0f);
 
-    // Left/Right Inset Boxes
     g.setColour (juce::Colour (0xffe2dfd4));
     auto leftBox = juce::Rectangle<float> (35.0f, 65.0f, 255.0f, 240.0f);
     auto rightBox = juce::Rectangle<float> (static_cast<float> (getWidth() - 290), 65.0f, 255.0f, 240.0f);
@@ -455,14 +468,12 @@ void EXAudioProcessorEditor::paint (juce::Graphics& g)
     g.drawRoundedRectangle (leftBox, 4.0f, 1.0f);
     g.drawRoundedRectangle (rightBox, 4.0f, 1.0f);
 
-    // Lower Plate: 3-Layer Multitrack Bed
     auto lowerBar = juce::Rectangle<float> (35.0f, 320.0f, static_cast<float> (getWidth() - 70), 245.0f);
     g.setColour (juce::Colour (0xffdfdbcf));
     g.fillRoundedRectangle (lowerBar, 4.0f);
     g.setColour (juce::Colour (0xffc4beb2));
     g.drawRoundedRectangle (lowerBar, 4.0f, 1.0f);
 
-    // Paint 3 Layer Waveform Beds
     for (int i = 0; i < 3; ++i)
     {
         auto& ui = layerUIs[i];
@@ -510,7 +521,6 @@ void EXAudioProcessorEditor::resized()
     brandTitle.setBounds (35, 12, 60, 32);
     subTitle.setBounds (100, 20, 600, 20);
 
-    // Left FX Unit
     delayTimeKnob.setBounds (50, 80, 72, 80);
     delayTimeLabel.setBounds (50, 160, 72, 16);
     delayMixKnob.setBounds (140, 80, 72, 80);
@@ -521,7 +531,6 @@ void EXAudioProcessorEditor::resized()
     reverbMixKnob.setBounds (140, 190, 72, 80);
     rvbMixLabel.setBounds (140, 270, 72, 16);
 
-    // Right FX Unit
     tapeDriveKnob.setBounds (getWidth() - 270, 80, 72, 80);
     tapeLabel.setBounds (getWidth() - 270, 160, 72, 16);
     filterCutoffKnob.setBounds (getWidth() - 180, 80, 72, 80);
@@ -530,12 +539,11 @@ void EXAudioProcessorEditor::resized()
     masterOutKnob.setBounds (getWidth() - 225, 190, 72, 80);
     masterLabel.setBounds (getWidth() - 225, 270, 72, 16);
 
-    // Center Controls
+    // Center Controls (Play/Pause Illuminated Button)
     int cX = getWidth() / 2;
-    playPauseButton.setBounds (cX - 82, 278, 78, 28);
-    dragMidiButton.setBounds (cX + 4, 278, 78, 28);
+    playPauseButton.setBounds (cX - 86, 278, 82, 30);
+    dragMidiButton.setBounds (cX + 4, 278, 82, 30);
 
-    // Master Target Controls
     masterTargetTitle.setBounds (45, 332, 120, 20);
     masterKeySelector.setBounds (165, 330, 62, 24);
     masterModeSelector.setBounds (232, 330, 84, 24);
@@ -543,7 +551,6 @@ void EXAudioProcessorEditor::resized()
 
     halfTimeToggle.setBounds (428, 330, 120, 24);
 
-    // Grid buttons
     int gX = 560;
     int gY = 330;
     int gW = 38;
@@ -554,7 +561,6 @@ void EXAudioProcessorEditor::resized()
     btnTriplet1_6.setBounds (gX + 172, gY, gW + 6, 24);
     btnTransient.setBounds (gX + 218, gY, 50, 24);
 
-    // 3 Layer Slots (Wide 62px Key Box to completely eliminate `...`)
     int startY = 368;
     int slotH = 58;
     for (int i = 0; i < 3; ++i)
@@ -563,8 +569,8 @@ void EXAudioProcessorEditor::resized()
         int y = startY + (i * slotH);
 
         ui.titleLabel.setBounds (45, y + 16, 60, 20);
-        ui.keySelector.setBounds (110, y + 16, 62, 22);   // 62px width avoids `...` truncation
-        ui.modeSelector.setBounds (177, y + 16, 80, 22);  // 80px width fits full mode text
+        ui.keySelector.setBounds (110, y + 16, 62, 22);
+        ui.modeSelector.setBounds (177, y + 16, 80, 22);
         ui.bpmSlider.setBounds (262, y + 16, 85, 22);
         ui.muteBtn.setBounds (352, y + 16, 24, 22);
         ui.clearBtn.setBounds (380, y + 16, 24, 22);
