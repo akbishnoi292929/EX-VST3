@@ -245,6 +245,7 @@ EXAudioProcessorEditor::EXAudioProcessorEditor (EXAudioProcessor& p)
     setupGridBtn (btnTriplet1_6, "1/6T", GridDivision::Triplet1_6);
     setupGridBtn (btnTransient, "TRANS", GridDivision::Transient);
 
+    // Initial Button State: Paused at start
     playPauseButton.setButtonText (juce::CharPointer_UTF8 ("\xe2\x96\xb6 PLAY"));
     playPauseButton.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff1b633b));
     playPauseButton.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
@@ -323,6 +324,11 @@ void EXAudioProcessorEditor::timerCallback()
         layerUIs[i].modeSelector.setSelectedId (audioProcessor.getTrack (i).sourceScaleMode + 1, juce::dontSendNotification);
         layerUIs[i].bpmSlider.setValue (audioProcessor.getTrack (i).sourceBpm, juce::dontSendNotification);
     }
+
+    // Keep Play/Pause button visual text 100% in-sync with engine state
+    bool isPlay = audioProcessor.isPlayingActive();
+    playPauseButton.setButtonText (isPlay ? juce::CharPointer_UTF8 ("\xe2\x8f\xb8 PAUSE") : juce::CharPointer_UTF8 ("\xe2\x96\xb6 PLAY"));
+    playPauseButton.setColour (juce::TextButton::buttonColourId, isPlay ? juce::Colour (0xff9e1e1e) : juce::Colour (0xff1b633b));
 
     radarAngle += 0.05f;
     if (radarAngle > juce::MathConstants<float>::twoPi)
