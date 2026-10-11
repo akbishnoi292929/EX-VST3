@@ -5,8 +5,8 @@ void EXAudioProcessorEditor::setupVintageKnob (juce::Slider& s, juce::Label& l, 
 {
     s.setSliderStyle (juce::Slider::RotaryVerticalDrag);
     s.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 50, 15);
-    s.setColour (juce::Slider::rotarySliderFillColourId, juce::Colour (0xffb82525)); // Deep Vintage Crimson
-    s.setColour (juce::Slider::rotarySliderOutlineColourId, juce::Colour (0xff36383e)); // Bakelite Dark
+    s.setColour (juce::Slider::rotarySliderFillColourId, juce::Colour (0xffb82525));
+    s.setColour (juce::Slider::rotarySliderOutlineColourId, juce::Colour (0xff36383e));
     s.setColour (juce::Slider::thumbColourId, juce::Colour (0xfff0f0f0));
     s.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
     s.setColour (juce::Slider::textBoxTextColourId, juce::Colour (0xff2b2b2b));
@@ -174,8 +174,8 @@ void EXAudioProcessorEditor::filesDropped (const juce::StringArray& files, int, 
 
 void EXAudioProcessorEditor::paint (juce::Graphics& g)
 {
-    // 1. Vintage Wooden Side Cheeks (Reference Image)
-    g.fillAll (juce::Colour (0xff57331d)); // Dark walnut wood
+    // 1. Vintage Wooden Side Cheeks
+    g.fillAll (juce::Colour (0xff57331d));
 
     // 2. Off-White / Cream Console Body Plate
     auto body = getLocalBounds().reduced (14, 10).toFloat();
@@ -185,38 +185,38 @@ void EXAudioProcessorEditor::paint (juce::Graphics& g)
     g.setColour (juce::Colour (0xffcfcac0));
     g.drawRoundedRectangle (body, 6.0f, 2.0f);
 
-    // Decorative Screws in 4 Corners
+    // Decorative Screws
     g.setColour (juce::Colour (0xff9e9a91));
-    g.fillEllipse (20, 16, 7, 7);
-    g.fillEllipse (getWidth() - 27, 16, 7, 7);
-    g.fillEllipse (20, getHeight() - 23, 7, 7);
-    g.fillEllipse (getWidth() - 27, getHeight() - 23, 7, 7);
+    g.fillEllipse (20.0f, 16.0f, 7.0f, 7.0f);
+    g.fillEllipse (static_cast<float> (getWidth() - 27), 16.0f, 7.0f, 7.0f);
+    g.fillEllipse (20.0f, static_cast<float> (getHeight() - 23), 7.0f, 7.0f);
+    g.fillEllipse (static_cast<float> (getWidth() - 27), static_cast<float> (getHeight() - 23), 7.0f, 7.0f);
 
     // Top Header Plate
     g.setColour (juce::Colour (0xffded9cd));
     g.drawHorizontalLine (56, body.getX(), body.getRight());
 
-    // 3. Center Circular Oscilloscope / Radar (Exact Reference)
+    // 3. Center Circular Oscilloscope / Radar
     float centerX = getWidth() * 0.5f;
     float centerY = 190.0f;
     float radius = 80.0f;
 
     // Outer Bezel
     g.setColour (juce::Colour (0xffb5b0a3));
-    g.drawEllipse (centerX - radius - 4, centerY - radius - 4, (radius + 4) * 2, (radius + 4) * 2, 3.0f);
+    g.drawEllipse (centerX - radius - 4.0f, centerY - radius - 4.0f, (radius + 4.0f) * 2.0f, (radius + 4.0f) * 2.0f, 3.0f);
 
     // Dark Red Radar Glass
     g.setColour (juce::Colour (0xff400d0d));
-    g.fillEllipse (centerX - radius, centerY - radius, radius * 2, radius * 2);
+    g.fillEllipse (centerX - radius, centerY - radius, radius * 2.0f, radius * 2.0f);
 
     // Radar Grid Lines
     g.setColour (juce::Colour (0x33b83232));
-    for (int r = 20; r < 80; r += 20)
-        g.drawEllipse (centerX - r, centerY - r, r * 2, r * 2, 1.0f);
+    for (float r = 20.0f; r < 80.0f; r += 20.0f)
+        g.drawEllipse (centerX - r, centerY - r, r * 2.0f, r * 2.0f, 1.0f);
     g.drawLine (centerX - radius, centerY, centerX + radius, centerY, 1.0f);
     g.drawLine (centerX, centerY - radius, centerX, centerY + radius, 1.0f);
 
-    // Neon Red/Orange Oscilloscope Waveform inside radar
+    // Neon Red/Orange Oscilloscope Waveform
     auto& buf = audioProcessor.getAudioBuffer();
     if (buf.getNumSamples() > 0)
     {
@@ -224,22 +224,24 @@ void EXAudioProcessorEditor::paint (juce::Graphics& g)
         int numSamples = buf.getNumSamples();
         for (int x = -60; x < 60; ++x)
         {
-            int idx = (int) (((x + 60) / 120.0f) * numSamples);
+            int idx = static_cast<int> (((x + 60) / 120.0f) * static_cast<float> (numSamples));
+            idx = juce::jlimit (0, numSamples - 1, idx);
             float val = buf.getSample (0, idx);
-            g.drawLine (centerX + x, centerY - (val * 45.0f), centerX + x, centerY + (val * 45.0f), 1.2f);
+            g.drawLine (centerX + static_cast<float> (x), centerY - (val * 45.0f),
+                        centerX + static_cast<float> (x), centerY + (val * 45.0f), 1.2f);
         }
     }
     else
     {
         g.setColour (juce::Colour (0xffa65353));
         g.setFont (12.0f);
-        g.drawText ("DROP SAMPLE", centerX - 50, centerY - 25, 100, 20, juce::Justification::centred);
+        g.drawText ("DROP SAMPLE", static_cast<int> (centerX - 50.0f), static_cast<int> (centerY - 25.0f), 100, 20, juce::Justification::centred);
     }
 
     // 4. Panel Insets for Left & Right FX Units
     g.setColour (juce::Colour (0xffe2dfd4));
-    auto leftBox = juce::Rectangle<float> (30, 75, 230, 240);
-    auto rightBox = juce::Rectangle<float> (getWidth() - 260, 75, 230, 240);
+    auto leftBox = juce::Rectangle<float> (30.0f, 75.0f, 230.0f, 240.0f);
+    auto rightBox = juce::Rectangle<float> (static_cast<float> (getWidth() - 260), 75.0f, 230.0f, 240.0f);
     g.fillRoundedRectangle (leftBox, 4.0f);
     g.fillRoundedRectangle (rightBox, 4.0f);
     g.setColour (juce::Colour (0xffcfcac0));
@@ -247,7 +249,7 @@ void EXAudioProcessorEditor::paint (juce::Graphics& g)
     g.drawRoundedRectangle (rightBox, 4.0f, 1.0f);
 
     // 5. Lower Sample & Scale Control Bar
-    auto lowerBar = juce::Rectangle<float> (30, 330, getWidth() - 60, 205);
+    auto lowerBar = juce::Rectangle<float> (30.0f, 330.0f, static_cast<float> (getWidth() - 60), 205.0f);
     g.setColour (juce::Colour (0xffdfdbcf));
     g.fillRoundedRectangle (lowerBar, 4.0f);
     g.setColour (juce::Colour (0xffc4beb2));
@@ -259,7 +261,7 @@ void EXAudioProcessorEditor::resized()
     brandTitle.setBounds (30, 14, 250, 22);
     subTitle.setBounds (30, 36, 250, 16);
 
-    // Left FX Unit (Delay & Space)
+    // Left FX Unit
     delayTimeKnob.setBounds (45, 95, 65, 75);
     delayTimeLabel.setBounds (45, 172, 65, 16);
     delayMixKnob.setBounds (125, 95, 65, 75);
@@ -270,7 +272,7 @@ void EXAudioProcessorEditor::resized()
     reverbMixKnob.setBounds (125, 205, 65, 75);
     rvbMixLabel.setBounds (125, 282, 65, 16);
 
-    // Right FX Unit (Tape, Filter, Master)
+    // Right FX Unit
     tapeDriveKnob.setBounds (getWidth() - 245, 95, 65, 75);
     tapeLabel.setBounds (getWidth() - 245, 172, 65, 16);
     filterCutoffKnob.setBounds (getWidth() - 165, 95, 65, 75);
@@ -279,13 +281,13 @@ void EXAudioProcessorEditor::resized()
     masterOutKnob.setBounds (getWidth() - 205, 205, 65, 75);
     masterLabel.setBounds (getWidth() - 205, 282, 65, 16);
 
-    // Center Controls (Below Radar)
+    // Center Controls
     int cX = getWidth() / 2;
     diceButton.setBounds (cX - 65, 200, 130, 34);
     playPauseButton.setBounds (cX - 80, 285, 75, 28);
     dragMidiButton.setBounds (cX + 5, 285, 75, 28);
 
-    // Lower Controls: Input Sample vs Target Project
+    // Lower Controls
     sourceSectionTitle.setBounds (50, 345, 150, 18);
     sourceKeySelector.setBounds (50, 370, 70, 24);
     sourceBpmSlider.setBounds (130, 370, 110, 24);
