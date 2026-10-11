@@ -17,7 +17,6 @@ struct LayerUIComponent
     juce::ComboBox keySelector;
     juce::ComboBox modeSelector;
     juce::Slider bpmSlider;
-    juce::Slider volSlider;
     juce::TextButton muteBtn;
     juce::TextButton clearBtn;
     juce::Rectangle<float> waveArea;
@@ -49,7 +48,6 @@ private:
     juce::Label brandTitle;
     juce::Label subTitle;
 
-    // 3 Dynamic Layers
     LayerUIComponent layerUIs[3];
 
     // Master Project Target Controls
@@ -58,7 +56,7 @@ private:
     juce::ComboBox masterModeSelector;
     juce::Slider masterBpmSlider;
 
-    // Grid Slicing Selectors
+    // Grid Slicing Buttons
     juce::TextButton btnQuarter;
     juce::TextButton btnEighth;
     juce::TextButton btnSixteenth;
@@ -66,14 +64,13 @@ private:
     juce::TextButton btnTriplet1_6;
     juce::TextButton btnTransient;
 
-    // Center Controls & Exporters
-    juce::TextButton diceHitboxButton;
+    // Controls
     juce::TextButton playPauseButton;
     juce::TextButton dragMidiButton;
     juce::TextButton dragAudioButton;
     juce::ToggleButton halfTimeToggle;
 
-    // Hardware Knobs
+    // Knobs
     juce::Slider tapeDriveKnob;
     juce::Slider delayTimeKnob;
     juce::Slider delayMixKnob;
@@ -90,6 +87,7 @@ private:
     float radarAngle = 0.0f;
     int draggingLayerIdx = -1;
     int draggingMarkerIdx = -1;
+    juce::Rectangle<float> radarCircleArea;
 
     void setupHardwareKnob (juce::Slider& s, juce::Label& l, const juce::String& name);
     void setupKeySelector (juce::ComboBox& box);
