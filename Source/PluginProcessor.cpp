@@ -113,8 +113,8 @@ void EXAudioProcessor::sliceTransientDetection()
 
     const float* data = sampleBuffer.getReadPointer (0);
     int total = sampleBuffer.getNumSamples();
-    float threshold = 0.15f;
-    int spacing = 44100 / 8;
+    float threshold = 0.12f;
+    int spacing = 44100 / 8; // At least 1/8s apart
 
     sliceMarkers.push_back (0);
     int prev = 0;
@@ -145,17 +145,18 @@ void EXAudioProcessor::rollDiceAndFlipPattern()
     if (count == 0) return;
 
     juce::Random rng;
+    // Musical minor scale chord extensions (Root, m3, P4, P5, m7, Octave)
     int intervals[] = { 0, 3, 5, 7, 10, 12, -2 };
     int keyDelta = targetKey - sourceKey;
 
     for (int i = 0; i < 16; ++i)
     {
         FlipStep step;
-        step.isGate = (i % 2 == 0) || (rng.nextFloat() > 0.40f);
+        step.isGate = (i % 2 == 0) || (rng.nextFloat() > 0.35f);
         step.sliceIdx = rng.nextInt (count);
         step.pitchOffset = keyDelta + intervals[rng.nextInt (7)];
-        step.velocity = 0.8f + (rng.nextFloat() * 0.2f);
-        step.isReverse = (rng.nextFloat() > 0.75f); // 25% chance of flipped reverse slice
+        step.velocity = 0.85f + (rng.nextFloat() * 0.15f);
+        step.isReverse = (rng.nextFloat() > 0.80f);
         patternSteps.push_back (step);
     }
 
@@ -285,10 +286,16 @@ void EXAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
 
             if (isValid)
             {
+                // Smooth de-click envelope at start/end
+                float gainEnv = 1.0f;
+                int distFromEdge = currentStepReverse ? (rPos - playheadEnd) : (playheadEnd - rPos);
+                if (distFromEdge < 64)
+                    gainEnv = static_cast<float> (distFromEdge) / 64.0f;
+
                 for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
                 {
                     int sCh = ch % sampleBuffer.getNumChannels();
-                    buffer.addSample (ch, s, sampleBuffer.getSample (sCh, rPos));
+                    buffer.addSample (ch, s, sampleBuffer.getSample (sCh, rPos) * gainEnv);
                 }
                 playheadPosition += (currentStepReverse ? -pitchSpeed : pitchSpeed);
             }
@@ -299,6 +306,7 @@ void EXAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
         }
     }
 
+    // Tape saturation
     if (tapeDrive > 0.01f)
     {
         float gain = 1.0f + (tapeDrive * 5.0f);
@@ -310,6 +318,7 @@ void EXAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
         }
     }
 
+    // Delay
     if (delayMix > 0.01f && delayBuffer.getNumSamples() > 0)
     {
         int dSamples = static_cast<int> (delayTime * getSampleRate());
@@ -328,11 +337,13 @@ void EXAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
         }
     }
 
+    // Filter
     filter.setCutoffFrequency (cutoff);
     juce::dsp::AudioBlock<float> blk (buffer);
     juce::dsp::ProcessContextReplacing<float> pCtx (blk);
     filter.process (pCtx);
 
+    // Reverb
     if (rvbMix > 0.01f)
     {
         reverbParams.roomSize = rvbSize * 0.85f;
