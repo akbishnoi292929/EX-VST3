@@ -26,6 +26,10 @@ public:
     bool isInterestedInFileDrag (const juce::StringArray& files) override;
     void filesDropped (const juce::StringArray& files, int x, int y) override;
 
+    void mouseDown (const juce::MouseEvent& e) override;
+    void mouseDrag (const juce::MouseEvent& e) override;
+    void mouseUp (const juce::MouseEvent& e) override;
+
 private:
     EXAudioProcessor& audioProcessor;
     VintageHardwareKnobLookAndFeel vintageKnobLAF;
@@ -36,16 +40,27 @@ private:
     // Controls
     juce::Label sourceTitle;
     juce::ComboBox sourceKeySelector;
+    juce::ComboBox sourceModeSelector;
     juce::Slider sourceBpmSlider;
 
     juce::Label targetTitle;
     juce::ComboBox targetKeySelector;
+    juce::ComboBox targetModeSelector;
     juce::Slider targetBpmSlider;
 
-    // Buttons
+    // Slicing Grid Buttons
+    juce::TextButton btnQuarter;
+    juce::TextButton btnEighth;
+    juce::TextButton btnSixteenth;
+    juce::TextButton btnTriplet1_3;
+    juce::TextButton btnTriplet1_6;
+    juce::TextButton btnTransient;
+
+    // Center Controls & Exporters
     juce::TextButton diceButton;
     juce::TextButton playPauseButton;
     juce::TextButton dragMidiButton;
+    juce::TextButton dragAudioButton;
     juce::ToggleButton halfTimeToggle;
 
     // Knobs
@@ -63,9 +78,13 @@ private:
     std::unique_ptr<Attachment> tapeAtt, delayTimeAtt, delayMixAtt, rvbSizeAtt, rvbMixAtt, filterAtt, masterAtt;
 
     float radarAngle = 0.0f;
+    int draggingMarkerIdx = -1;
+    juce::Rectangle<float> waveformArea;
 
     void setupHardwareKnob (juce::Slider& s, juce::Label& l, const juce::String& name);
     void setupKeySelector (juce::ComboBox& box);
+    void setupModeSelector (juce::ComboBox& box);
+    void draw3DDice (juce::Graphics& g, float cx, float cy, float size);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (EXAudioProcessorEditor)
 };
