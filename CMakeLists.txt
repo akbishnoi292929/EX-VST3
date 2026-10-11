@@ -6,11 +6,12 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-# Disable unnecessary JUCE internal targets & demo builds
 set(JUCE_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(JUCE_BUILD_EXTRAS OFF CACHE BOOL "" FORCE)
 
-# Include JUCE
+# Enforce Static C++ Runtime (/MT) for 100% Windows 7 compatibility
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+
 if(NOT TARGET juce::juce_audio_utils)
     if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/JUCE")
         add_subdirectory(JUCE)
@@ -26,7 +27,7 @@ if(NOT TARGET juce::juce_audio_utils)
     endif()
 endif()
 
-# Plugin Target Configuration (Synth mode enabled for MIDI & Piano Roll)
+# Plugin Target Configuration
 juce_add_plugin(EX
     COMPANY_NAME "AK Bishnoi"
     PLUGIN_MANUFACTURER_CODE AkBi
@@ -48,9 +49,10 @@ target_sources(EX
         Source/PluginProcessor.h
         Source/PluginEditor.cpp
         Source/PluginEditor.h
+        Source/AiWeightsMatrix.h
 )
 
-# Link essential JUCE modules including audio formats & DSP
+# Link essential JUCE modules
 target_link_libraries(EX
     PRIVATE
         juce::juce_audio_utils
@@ -66,16 +68,15 @@ target_link_libraries(EX
         juce::juce_recommended_warning_flags
 )
 
-# Optimize for lightweight Windows 7 compatibility
 target_compile_definitions(EX
     PUBLIC
         JUCE_WEB_BROWSER=0
         JUCE_USE_CURL=0
         JUCE_VST3_CAN_REPLACE_VST2=0
         JUCE_DISPLAY_SPLASH_SCREEN=0
+        JUCE_USE_DIRECTWRITE=0
 )
 
-# MSVC Optimizations & Multi-threaded compilation
 if(MSVC)
     target_compile_options(EX PRIVATE /MP /W4)
 endif()
