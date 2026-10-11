@@ -12,6 +12,16 @@ struct FlipStep
     bool isGate = true;
 };
 
+enum class GridDivision
+{
+    Quarter = 0, // 1/4
+    Eighth,      // 1/8
+    Sixteenth,   // 1/16
+    Triplet1_3,  // 1/3 Triplet
+    Triplet1_6,  // 1/6 Triplet
+    Transient    // Onset Detection
+};
+
 class EXAudioProcessor : public juce::AudioProcessor
 {
 public:
@@ -42,9 +52,12 @@ public:
     void setStateInformation (const void* data, int sizeInBytes) override;
 
     void loadAudioFile (const juce::File& file);
-    void sliceTransientDetection();
+    void applyGridSlicing (GridDivision div);
+    void setSlicePosition (int markerIndex, int newSamplePosition);
     void rollDiceAndFlipPattern();
-    juce::File generateMidiFile();
+
+    juce::File exportCurrentAsAudioWav();
+    juce::File exportCurrentAsMidi();
 
     void togglePlayback();
     bool isPlayingActive() const { return isPlayingPattern.load(); }
@@ -54,16 +67,20 @@ public:
 
     int sourceBpm = 130;
     int sourceKey = 0;
+    int sourceScaleMode = 0; // 0: Minor, 1: Major
+
     int targetBpm = 140;
     int targetKey = 0;
+    int targetScaleMode = 0; // 0: Minor, 1: Major, 2: Dorian, 3: Phrygian
     bool halfTimeMode = false;
+    GridDivision currentGrid = GridDivision::Eighth;
 
     juce::AudioProcessorValueTreeState apvts;
     juce::AudioFormatManager formatManager;
 
 private:
     juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
-    void analyzeAudioProperties();
+    void analyzeAudioBpmAndKey();
 
     juce::AudioSampleBuffer sampleBuffer;
     std::vector<int> sliceMarkers;
