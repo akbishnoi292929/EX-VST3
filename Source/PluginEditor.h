@@ -41,6 +41,9 @@ public:
     void mouseDrag (const juce::MouseEvent& e) override;
     void mouseUp (const juce::MouseEvent& e) override;
 
+    // Spacebar Key Listener
+    bool keyPressed (const juce::KeyPress& key) override;
+
 private:
     EXAudioProcessor& audioProcessor;
     VintageHardwareKnobLookAndFeel vintageKnobLAF;
@@ -50,13 +53,11 @@ private:
 
     LayerUIComponent layerUIs[3];
 
-    // Master Project Target Controls
     juce::Label masterTargetTitle;
     juce::ComboBox masterKeySelector;
     juce::ComboBox masterModeSelector;
     juce::Slider masterBpmSlider;
 
-    // Grid Slicing Buttons
     juce::TextButton btnQuarter;
     juce::TextButton btnEighth;
     juce::TextButton btnSixteenth;
@@ -64,13 +65,11 @@ private:
     juce::TextButton btnTriplet1_6;
     juce::TextButton btnTransient;
 
-    // Controls
     juce::TextButton playPauseButton;
     juce::TextButton dragMidiButton;
     juce::TextButton dragAudioButton;
     juce::ToggleButton halfTimeToggle;
 
-    // Knobs
     juce::Slider tapeDriveKnob;
     juce::Slider delayTimeKnob;
     juce::Slider delayMixKnob;
