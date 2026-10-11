@@ -245,9 +245,8 @@ EXAudioProcessorEditor::EXAudioProcessorEditor (EXAudioProcessor& p)
     setupGridBtn (btnTriplet1_6, "1/6T", GridDivision::Triplet1_6);
     setupGridBtn (btnTransient, "TRANS", GridDivision::Transient);
 
-    // Illuminated Hardware Play/Pause Button
     playPauseButton.setButtonText (juce::CharPointer_UTF8 ("\xe2\x96\xb6 PLAY"));
-    playPauseButton.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff1b633b)); // Emerald Green
+    playPauseButton.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff1b633b));
     playPauseButton.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
     playPauseButton.onClick = [this]() {
         audioProcessor.togglePlayback();
@@ -434,7 +433,6 @@ void EXAudioProcessorEditor::paint (juce::Graphics& g)
     g.fillEllipse (20.0f, static_cast<float> (getHeight() - 23), 7.0f, 7.0f);
     g.fillEllipse (static_cast<float> (getWidth() - 27), static_cast<float> (getHeight() - 23), 7.0f, 7.0f);
 
-    // Circular Radar
     float cX = getWidth() * 0.5f;
     float cY = 185.0f;
     float r = 78.0f;
@@ -539,7 +537,6 @@ void EXAudioProcessorEditor::resized()
     masterOutKnob.setBounds (getWidth() - 225, 190, 72, 80);
     masterLabel.setBounds (getWidth() - 225, 270, 72, 16);
 
-    // Center Controls (Play/Pause Illuminated Button)
     int cX = getWidth() / 2;
     playPauseButton.setBounds (cX - 86, 278, 82, 30);
     dragMidiButton.setBounds (cX + 4, 278, 82, 30);
