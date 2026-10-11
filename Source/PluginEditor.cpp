@@ -230,11 +230,6 @@ EXAudioProcessorEditor::EXAudioProcessorEditor (EXAudioProcessor& p)
     setupGridBtn (btnTriplet1_6, "1/6T", GridDivision::Triplet1_6);
     setupGridBtn (btnTransient, "TRANS", GridDivision::Transient);
 
-    diceHitboxButton.setButtonText ("");
-    diceHitboxButton.setColour (juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
-    diceHitboxButton.onClick = [this]() { audioProcessor.rollDiceAndGenerateMasterPattern(); };
-    addAndMakeVisible (diceHitboxButton);
-
     playPauseButton.setButtonText (juce::CharPointer_UTF8 ("\xe2\x96\xb6 PLAY"));
     playPauseButton.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff2d3036));
     playPauseButton.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
@@ -295,8 +290,7 @@ EXAudioProcessorEditor::EXAudioProcessorEditor (EXAudioProcessor& p)
     filterAtt    = std::make_unique<Attachment> (audioProcessor.apvts, "FILTER_CUTOFF", filterCutoffKnob);
     masterAtt    = std::make_unique<Attachment> (audioProcessor.apvts, "MASTER_OUT", masterOutKnob);
 
-    // Spacious High-Definition Size (960 x 620)
-    setSize (960, 620);
+    setSize (980, 620);
     startTimerHz (40);
 }
 
@@ -353,6 +347,13 @@ void EXAudioProcessorEditor::filesDropped (const juce::StringArray& files, int, 
 
 void EXAudioProcessorEditor::mouseDown (const juce::MouseEvent& e)
 {
+    // Direct click on Radar circle to trigger 3D Dice roll (No button outline!)
+    if (radarCircleArea.contains (e.position))
+    {
+        audioProcessor.rollDiceAndGenerateMasterPattern();
+        return;
+    }
+
     draggingLayerIdx = -1;
     draggingMarkerIdx = -1;
 
@@ -412,17 +413,17 @@ void EXAudioProcessorEditor::paint (juce::Graphics& g)
     g.setColour (juce::Colour (0xffcfcac0));
     g.drawRoundedRectangle (body, 6.0f, 2.0f);
 
-    // Screws
     g.setColour (juce::Colour (0xffa8a49c));
     g.fillEllipse (20.0f, 16.0f, 7.0f, 7.0f);
     g.fillEllipse (static_cast<float> (getWidth() - 27), 16.0f, 7.0f, 7.0f);
     g.fillEllipse (20.0f, static_cast<float> (getHeight() - 23), 7.0f, 7.0f);
     g.fillEllipse (static_cast<float> (getWidth() - 27), static_cast<float> (getHeight() - 23), 7.0f, 7.0f);
 
-    // Circular Radar
+    // Circular Radar Area
     float cX = getWidth() * 0.5f;
     float cY = 185.0f;
     float r = 78.0f;
+    radarCircleArea = juce::Rectangle<float> (cX - r, cY - r, r * 2.0f, r * 2.0f);
 
     g.setColour (juce::Colour (0xffb8b4a8));
     g.drawEllipse (cX - r - 4.0f, cY - r - 4.0f, (r + 4.0f) * 2.0f, (r + 4.0f) * 2.0f, 3.5f);
@@ -441,6 +442,7 @@ void EXAudioProcessorEditor::paint (juce::Graphics& g)
     g.setColour (juce::Colour (0x66ff3b30));
     g.drawLine (cX, cY, scanX, scanY, 1.5f);
 
+    // Draw Realistic 3D Cube Dice
     drawRealistic3DCubeDice (g, cX, cY, 52.0f);
 
     // Left/Right Inset Boxes
@@ -530,17 +532,16 @@ void EXAudioProcessorEditor::resized()
 
     // Center Controls
     int cX = getWidth() / 2;
-    diceHitboxButton.setBounds (cX - 38, 160, 76, 76);
     playPauseButton.setBounds (cX - 82, 278, 78, 28);
     dragMidiButton.setBounds (cX + 4, 278, 78, 28);
 
-    // Master Target Controls (Full Spacious Bar)
+    // Master Target Controls
     masterTargetTitle.setBounds (45, 332, 120, 20);
-    masterKeySelector.setBounds (165, 330, 54, 24);
-    masterModeSelector.setBounds (224, 330, 82, 24);
-    masterBpmSlider.setBounds (312, 330, 95, 24);
+    masterKeySelector.setBounds (165, 330, 62, 24);
+    masterModeSelector.setBounds (232, 330, 84, 24);
+    masterBpmSlider.setBounds (322, 330, 95, 24);
 
-    halfTimeToggle.setBounds (420, 330, 120, 24);
+    halfTimeToggle.setBounds (428, 330, 120, 24);
 
     // Grid buttons
     int gX = 560;
@@ -553,7 +554,7 @@ void EXAudioProcessorEditor::resized()
     btnTriplet1_6.setBounds (gX + 172, gY, gW + 6, 24);
     btnTransient.setBounds (gX + 218, gY, 50, 24);
 
-    // 3 Layer Slots with Full Spacious Alignment
+    // 3 Layer Slots (Wide 62px Key Box to completely eliminate `...`)
     int startY = 368;
     int slotH = 58;
     for (int i = 0; i < 3; ++i)
@@ -562,13 +563,13 @@ void EXAudioProcessorEditor::resized()
         int y = startY + (i * slotH);
 
         ui.titleLabel.setBounds (45, y + 16, 60, 20);
-        ui.keySelector.setBounds (110, y + 16, 52, 22);
-        ui.modeSelector.setBounds (167, y + 16, 78, 22);
-        ui.bpmSlider.setBounds (250, y + 16, 85, 22);
-        ui.muteBtn.setBounds (342, y + 16, 24, 22);
-        ui.clearBtn.setBounds (370, y + 16, 24, 22);
+        ui.keySelector.setBounds (110, y + 16, 62, 22);   // 62px width avoids `...` truncation
+        ui.modeSelector.setBounds (177, y + 16, 80, 22);  // 80px width fits full mode text
+        ui.bpmSlider.setBounds (262, y + 16, 85, 22);
+        ui.muteBtn.setBounds (352, y + 16, 24, 22);
+        ui.clearBtn.setBounds (380, y + 16, 24, 22);
 
-        ui.waveArea = juce::Rectangle<float> (405.0f, (float) (y + 6), (float) (getWidth() - 455), 44.0f);
+        ui.waveArea = juce::Rectangle<float> (415.0f, (float) (y + 6), (float) (getWidth() - 465), 44.0f);
     }
 
     dragAudioButton.setBounds (getWidth() - 150, 575, 105, 24);
