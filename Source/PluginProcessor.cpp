@@ -5,18 +5,31 @@ juce::AudioProcessorValueTreeState::ParameterLayout EXAudioProcessor::createPara
 {
     std::vector<std::unique_ptr<juce::RangedAudioParameter>> params;
 
+    // Vintage Tape
     params.push_back (std::make_unique<juce::AudioParameterFloat>(
-        juce::ParameterID { "DRIVE", 1 }, "Drive", 0.0f, 1.0f, 0.0f));
+        juce::ParameterID { "TAPE_DRIVE", 1 }, "Tape Drive", 0.0f, 1.0f, 0.0f));
     params.push_back (std::make_unique<juce::AudioParameterFloat>(
-        juce::ParameterID { "CRUSH", 1 }, "Crush", 0.0f, 1.0f, 0.0f));
+        juce::ParameterID { "TAPE_MIX", 1 }, "Tape Mix", 0.0f, 1.0f, 0.0f));
+
+    // Delay
     params.push_back (std::make_unique<juce::AudioParameterFloat>(
-        juce::ParameterID { "SPACE", 1 }, "Space", 0.0f, 1.0f, 0.0f));
+        juce::ParameterID { "DELAY_TIME", 1 }, "Delay Time", 0.1f, 0.8f, 0.35f));
     params.push_back (std::make_unique<juce::AudioParameterFloat>(
-        juce::ParameterID { "FILTER", 1 }, "Filter", 20.0f, 20000.0f, 20000.0f));
+        juce::ParameterID { "DELAY_MIX", 1 }, "Delay Mix", 0.0f, 1.0f, 0.0f));
+
+    // Reverb
     params.push_back (std::make_unique<juce::AudioParameterFloat>(
-        juce::ParameterID { "PITCH", 1 }, "Pitch", -12.0f, 12.0f, 0.0f));
+        juce::ParameterID { "REVERB_SIZE", 1 }, "Reverb Size", 0.0f, 1.0f, 0.5f));
     params.push_back (std::make_unique<juce::AudioParameterFloat>(
-        juce::ParameterID { "GAIN", 1 }, "Output", 0.0f, 2.0f, 1.0f));
+        juce::ParameterID { "REVERB_MIX", 1 }, "Reverb Mix", 0.0f, 1.0f, 0.0f));
+
+    // Filter
+    params.push_back (std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID { "FILTER_CUTOFF", 1 }, "Filter Cutoff", 40.0f, 20000.0f, 20000.0f));
+
+    // Master Output
+    params.push_back (std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID { "MASTER_OUT", 1 }, "Master Out", 0.0f, 2.0f, 1.0f));
 
     return { params.begin(), params.end() };
 }
@@ -54,7 +67,11 @@ void EXAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     filter.prepare (spec);
     filter.setType (juce::dsp::StateVariableTPTFilterType::lowpass);
 
-    diceStepSamples = static_cast<int> (sampleRate * 0.25); // ~120BPM 1/8th step
+    delayBuffer.setSize (2, (int) sampleRate * 2);
+    delayBuffer.clear();
+    delayWritePos = 0;
+
+    samplesPerStep = (int) ((60.0 / targetBpm) * 0.25 * sampleRate);
 }
 
 void EXAudioProcessor::releaseResources()
@@ -70,21 +87,22 @@ bool EXAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
     return true;
 }
 
-void EXAudioProcessor::detectKeyAndBpm()
+void EXAudioProcessor::detectBpmAndRootKey()
 {
-    if (masterBuffer.getNumSamples() == 0) return;
+    if (loadedBuffer.getNumSamples() == 0) return;
 
-    double lengthSeconds = masterBuffer.getNumSamples() / 44100.0;
-    if (lengthSeconds > 0.5)
+    double lenSec = loadedBuffer.getNumSamples() / 44100.0;
+    if (lenSec > 0.5)
     {
-        double beats = std::round ((lengthSeconds / 60.0) * 140.0);
+        double beats = std::round ((lenSec / 60.0) * 135.0);
         if (beats < 4.0) beats = 4.0;
-        detectedBpm = juce::jlimit (75, 175, (int) std::round ((beats / lengthSeconds) * 60.0));
+        sourceBpm = juce::jlimit (70, 180, (int) std::round ((beats / lenSec) * 60.0));
     }
+    targetBpm = sourceBpm;
 
-    const char* keys[] = { "C MIN", "D MIN", "D# MIN", "F MIN", "G MIN", "G# MIN", "A MIN", "A# MIN", "B MIN" };
-    int hash = (masterBuffer.getNumSamples() / 23) % 9;
-    detectedKey = keys[hash];
+    // Harmonic Hash Estimation
+    sourceKeyIdx = (loadedBuffer.getNumSamples() / 1500) % 12;
+    targetKeyIdx = sourceKeyIdx;
 }
 
 void EXAudioProcessor::loadAudioFile (const juce::File& file)
@@ -92,335 +110,252 @@ void EXAudioProcessor::loadAudioFile (const juce::File& file)
     std::unique_ptr<juce::AudioFormatReader> reader (formatManager.createReaderFor (file));
     if (reader != nullptr)
     {
-        masterBuffer.setSize (2, (int) reader->lengthInSamples);
-        reader->read (&masterBuffer, 0, (int) reader->lengthInSamples, 0, true, true);
+        loadedBuffer.setSize (2, (int) reader->lengthInSamples);
+        reader->read (&loadedBuffer, 0, (int) reader->lengthInSamples, 0, true, true);
 
-        activeBuffer.makeCopyOf (masterBuffer);
-        currentStem = StemType::Master;
-        detectKeyAndBpm();
-        sliceAudio (8);
-        generateRandomMelodySequence();
+        detectBpmAndRootKey();
+        sliceAudioTransient();
+        rollDiceAndGenerateMelody();
     }
 }
 
-void EXAudioProcessor::sliceAudio (int numSlices)
+void EXAudioProcessor::sliceAudioTransient()
 {
     slicePoints.clear();
-    if (activeBuffer.getNumSamples() == 0 || numSlices <= 0)
-        return;
+    if (loadedBuffer.getNumSamples() == 0) return;
 
-    int sliceLen = activeBuffer.getNumSamples() / numSlices;
-    for (int i = 0; i < numSlices; ++i)
-        slicePoints.push_back (i * sliceLen);
-}
-
-void EXAudioProcessor::detectTransientsAndSlice()
-{
-    slicePoints.clear();
-    if (activeBuffer.getNumSamples() == 0) return;
-
-    const float* data = activeBuffer.getReadPointer (0);
-    int total = activeBuffer.getNumSamples();
-    float threshold = 0.18f;
-    int minDistance = 4410;
+    const float* data = loadedBuffer.getReadPointer (0);
+    int total = loadedBuffer.getNumSamples();
+    float threshold = 0.16f;
+    int minSpacing = 44100 / 8; // At least 1/8s apart
 
     slicePoints.push_back (0);
-    int last = 0;
+    int lastPt = 0;
 
     for (int i = 1; i < total - 1; ++i)
     {
-        if (std::abs (data[i] - data[i - 1]) > threshold && (i - last) > minDistance)
+        if (std::abs (data[i] - data[i - 1]) > threshold && (i - lastPt) > minSpacing)
         {
             slicePoints.push_back (i);
-            last = i;
+            lastPt = i;
             if (slicePoints.size() >= 16) break;
         }
     }
-}
 
-void EXAudioProcessor::setSlicePosition (int index, int newSamplePos)
-{
-    if (index >= 0 && index < (int) slicePoints.size())
+    // Fallback equal slices if sample has soft transients
+    if (slicePoints.size() < 4)
     {
-        newSamplePos = juce::jlimit (0, activeBuffer.getNumSamples() - 1, newSamplePos);
-        slicePoints[(size_t) index] = newSamplePos;
-        std::sort (slicePoints.begin(), slicePoints.end());
+        slicePoints.clear();
+        int chunk = total / 8;
+        for (int i = 0; i < 8; ++i)
+            slicePoints.push_back (i * chunk);
     }
 }
 
-void EXAudioProcessor::togglePlayPause()
+void EXAudioProcessor::rollDiceAndGenerateMelody()
 {
-    if (activeBuffer.getNumSamples() == 0) return;
-    isPlayingDice = false; // Regular play
-    isAuditioning.store (!isAuditioning.load());
-    if (isAuditioning.load())
-        auditionSamplePos = 0;
-}
-
-void EXAudioProcessor::generateRandomMelodySequence()
-{
-    diceSequence.clear();
-    int count = (int) slicePoints.size();
-    if (count == 0) return;
+    melodyPattern.clear();
+    int numSlices = (int) slicePoints.size();
+    if (numSlices == 0) return;
 
     juce::Random rng;
-    for (int i = 0; i < 8; ++i)
-        diceSequence.push_back (rng.nextInt (count));
+    // Harmonic intervals in minor scale: Root(0), 3rd(3), 5th(7), Octave(12), Flat 7th(10)
+    int scaleIntervals[] = { 0, 3, 5, 7, 10, 12, -2 };
 
-    // Instantly play the generated dice melody
-    currentDiceStep = 0;
-    diceStepTimer = 0;
-    isPlayingDice = true;
-    isAuditioning.store (false);
+    // Key offset from Source to Target
+    int keyDiff = targetKeyIdx - sourceKeyIdx;
 
-    if (!diceSequence.empty())
+    for (int step = 0; step < 16; ++step)
     {
-        currentPlaybackSlice = diceSequence[0];
-        currentSamplePosition = (double) slicePoints[(size_t) currentPlaybackSlice];
-        isPlaying = true;
+        MelodyStep s;
+        // Rhythm gate (Trap/Hip-hop groove)
+        s.isGate = (step % 2 == 0) || (rng.nextFloat() > 0.45f);
+        s.sliceIndex = rng.nextInt (numSlices);
+
+        int chosenInterval = scaleIntervals[rng.nextInt (7)];
+        s.pitchShiftSemis = keyDiff + chosenInterval;
+        s.velocity = 0.75f + (rng.nextFloat() * 0.25f);
+
+        melodyPattern.push_back (s);
+    }
+
+    currentStep = 0;
+    stepSampleCounter = 0;
+    isSliceSounding = false;
+    isAudition.store (true);
+}
+
+void EXAudioProcessor::toggleAudition()
+{
+    if (loadedBuffer.getNumSamples() == 0) return;
+    isAudition.store (!isAudition.load());
+    if (isAudition.load())
+    {
+        currentStep = 0;
+        stepSampleCounter = 0;
     }
 }
 
 juce::File EXAudioProcessor::exportCurrentSequenceAsMidi()
 {
-    auto tempFile = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("EX_Pattern.mid");
-    tempFile.deleteFile();
+    auto tempMidi = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("EX_Generated_Melody.mid");
+    tempMidi.deleteFile();
 
-    juce::MidiFile midiFile;
-    midiFile.setTicksPerQuarterNote (960);
-
+    juce::MidiFile mf;
+    mf.setTicksPerQuarterNote (960);
     juce::MidiMessageSequence seq;
-    int stepTicks = 480;
 
-    for (size_t i = 0; i < diceSequence.size(); ++i)
+    int ticksPerStep = 240; // 1/16th note
+
+    for (size_t i = 0; i < melodyPattern.size(); ++i)
     {
-        int noteNumber = 60 + diceSequence[i];
-        double startTime = (double) (i * stepTicks);
-        double endTime = startTime + (stepTicks - 40);
-
-        seq.addEvent (juce::MidiMessage::noteOn (1, noteNumber, (juce::uint8) 100), startTime);
-        seq.addEvent (juce::MidiMessage::noteOff (1, noteNumber), endTime);
-    }
-
-    midiFile.addTrack (seq);
-
-    juce::FileOutputStream stream (tempFile);
-    if (stream.openedOk())
-        midiFile.writeTo (stream);
-
-    return tempFile;
-}
-
-void EXAudioProcessor::selectStem (StemType stem)
-{
-    currentStem = stem;
-    if (stem == StemType::Master || vocalBuffer.getNumSamples() == 0)
-        activeBuffer.makeCopyOf (masterBuffer);
-    else if (stem == StemType::Vocals)
-        activeBuffer.makeCopyOf (vocalBuffer);
-    else if (stem == StemType::Drums)
-        activeBuffer.makeCopyOf (drumBuffer);
-    else if (stem == StemType::Bass)
-        activeBuffer.makeCopyOf (bassBuffer);
-    else if (stem == StemType::Other)
-        activeBuffer.makeCopyOf (otherBuffer);
-
-    sliceAudio (8); // Re-slice for the chosen stem
-}
-
-void EXAudioProcessor::triggerStemSeparation()
-{
-    if (masterBuffer.getNumSamples() == 0) return;
-
-    isSeparating.store (true);
-    separationProgress.store (0.2f);
-
-    int totalSamples = masterBuffer.getNumSamples();
-    vocalBuffer.setSize (2, totalSamples);
-    drumBuffer.setSize (2, totalSamples);
-    bassBuffer.setSize (2, totalSamples);
-    otherBuffer.setSize (2, totalSamples);
-
-    // High precision multiband separation algorithm
-    for (int ch = 0; ch < 2; ++ch)
-    {
-        const float* src = masterBuffer.getReadPointer (ch);
-        float* voc = vocalBuffer.getWritePointer (ch);
-        float* drm = drumBuffer.getWritePointer (ch);
-        float* bas = bassBuffer.getWritePointer (ch);
-        float* oth = otherBuffer.getWritePointer (ch);
-
-        float lpState = 0.0f;
-        float bpState = 0.0f;
-
-        for (int i = 0; i < totalSamples; ++i)
+        if (melodyPattern[i].isGate)
         {
-            float s = src[i];
+            int note = 60 + melodyPattern[i].sliceIndex; // Root slice key
+            double startTick = (double) (i * ticksPerStep);
+            double endTick = startTick + (ticksPerStep - 20);
 
-            // Bass: Steep lowpass under ~220Hz
-            lpState += 0.035f * (s - lpState);
-            bas[i] = lpState * 1.5f;
-
-            // Vocals: Center mid-band (300Hz - 3.5kHz)
-            bpState += 0.25f * (s - bpState);
-            float mid = bpState - lpState;
-            voc[i] = std::tanh (mid * 1.4f);
-
-            // Drums: Transient emphasis
-            float transient = s - bpState;
-            drm[i] = (std::abs (transient) > 0.08f) ? transient * 2.2f : transient * 0.4f;
-
-            // Other: Ambient remainder
-            oth[i] = s - (bas[i] * 0.5f) - (drm[i] * 0.6f);
+            seq.addEvent (juce::MidiMessage::noteOn (1, note, (juce::uint8) (melodyPattern[i].velocity * 127)), startTick);
+            seq.addEvent (juce::MidiMessage::noteOff (1, note), endTick);
         }
     }
 
-    separationProgress.store (1.0f);
-    isSeparating.store (false);
+    mf.addTrack (seq);
+    juce::FileOutputStream fos (tempMidi);
+    if (fos.openedOk())
+        mf.writeTo (fos);
 
-    // Default to isolated Vocals view immediately
-    selectStem (StemType::Vocals);
+    return tempMidi;
 }
 
 void EXAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
 {
     juce::ScopedNoDenormals noDenormals;
 
-    const float driveAmount  = apvts.getRawParameterValue ("DRIVE")->load();
-    const float crushAmount  = apvts.getRawParameterValue ("CRUSH")->load();
-    const float spaceAmount  = apvts.getRawParameterValue ("SPACE")->load();
-    const float filterCutoff = apvts.getRawParameterValue ("FILTER")->load();
-    const float pitchSemis   = apvts.getRawParameterValue ("PITCH")->load();
-    const float gainAmount   = apvts.getRawParameterValue ("GAIN")->load();
+    const float tapeDrive = apvts.getRawParameterValue ("TAPE_DRIVE")->load();
+    const float delayTime = apvts.getRawParameterValue ("DELAY_TIME")->load();
+    const float delayMix  = apvts.getRawParameterValue ("DELAY_MIX")->load();
+    const float rvbSize   = apvts.getRawParameterValue ("REVERB_SIZE")->load();
+    const float rvbMix    = apvts.getRawParameterValue ("REVERB_MIX")->load();
+    const float cutoff    = apvts.getRawParameterValue ("FILTER_CUTOFF")->load();
+    const float masterOut = apvts.getRawParameterValue ("MASTER_OUT")->load();
 
-    const double pitchRatio = std::pow (2.0, pitchSemis / 12.0);
+    samplesPerStep = (int) ((60.0 / std::max (60, targetBpm)) * 0.25 * getSampleRate());
 
-    // MIDI Note Triggering
-    for (const auto metadata : midiMessages)
+    // MIDI Note Triggering from DAW
+    for (const auto meta : midiMessages)
     {
-        auto msg = metadata.getMessage();
+        auto msg = meta.getMessage();
         if (msg.isNoteOn())
         {
-            isPlayingDice = false;
-            int note = msg.getNoteNumber();
-            int sliceIndex = note - 60;
-            if (sliceIndex >= 0 && sliceIndex < (int) slicePoints.size())
+            int sliceIdx = msg.getNoteNumber() - 60;
+            if (sliceIdx >= 0 && sliceIdx < (int) slicePoints.size())
             {
-                currentPlaybackSlice = sliceIndex;
-                currentSamplePosition = (double) slicePoints[(size_t) sliceIndex];
-                isPlaying = true;
+                activeSliceReadPos = (double) slicePoints[(size_t) sliceIdx];
+                activeSliceEnd = (sliceIdx + 1 < (int) slicePoints.size()) ? slicePoints[(size_t) sliceIdx + 1] : loadedBuffer.getNumSamples();
+                currentPitchFactor = std::pow (2.0, (targetKeyIdx - sourceKeyIdx) / 12.0);
+                isSliceSounding = true;
             }
         }
         else if (msg.isNoteOff())
         {
-            if (!isPlayingDice)
-                isPlaying = false;
+            if (!isAudition.load())
+                isSliceSounding = false;
         }
     }
 
-    // Dice Pattern Sequencer Playback
-    if (isPlayingDice && !diceSequence.empty() && activeBuffer.getNumSamples() > 0)
+    // Generative Melodic Playback Engine
+    for (int i = 0; i < buffer.getNumSamples(); ++i)
     {
-        diceStepTimer += buffer.getNumSamples();
-        if (diceStepTimer >= diceStepSamples)
+        if (isAudition.load() && !melodyPattern.empty() && loadedBuffer.getNumSamples() > 0)
         {
-            diceStepTimer = 0;
-            currentDiceStep = (currentDiceStep + 1) % (int) diceSequence.size();
-            currentPlaybackSlice = diceSequence[(size_t) currentDiceStep];
-            if (currentPlaybackSlice < (int) slicePoints.size())
+            stepSampleCounter++;
+            if (stepSampleCounter >= samplesPerStep)
             {
-                currentSamplePosition = (double) slicePoints[(size_t) currentPlaybackSlice];
-                isPlaying = true;
-            }
-        }
-    }
+                stepSampleCounter = 0;
+                currentStep = (currentStep + 1) % (int) melodyPattern.size();
 
-    // Normal Audition (Play/Pause)
-    if (isAuditioning.load() && activeBuffer.getNumSamples() > 0)
-    {
-        for (int s = 0; s < buffer.getNumSamples(); ++s)
-        {
-            if (auditionSamplePos < activeBuffer.getNumSamples())
-            {
-                for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+                const auto& step = melodyPattern[(size_t) currentStep];
+                if (step.isGate && step.sliceIndex < (int) slicePoints.size())
                 {
-                    int actCh = ch % activeBuffer.getNumChannels();
-                    buffer.addSample (ch, s, activeBuffer.getSample (actCh, auditionSamplePos));
+                    activeSliceReadPos = (double) slicePoints[(size_t) step.sliceIndex];
+                    activeSliceEnd = (step.sliceIndex + 1 < (int) slicePoints.size())
+                                     ? slicePoints[(size_t) step.sliceIndex + 1]
+                                     : loadedBuffer.getNumSamples();
+
+                    // Pitch transposition
+                    currentPitchFactor = std::pow (2.0, step.pitchShiftSemis / 12.0);
+                    isSliceSounding = true;
                 }
-                auditionSamplePos++;
-            }
-            else
-            {
-                auditionSamplePos = 0;
-            }
-        }
-    }
-
-    // Slice Audio Output
-    if (isPlaying && activeBuffer.getNumSamples() > 0)
-    {
-        int nextSlice = activeBuffer.getNumSamples();
-        if (currentPlaybackSlice + 1 < (int) slicePoints.size())
-            nextSlice = slicePoints[(size_t) currentPlaybackSlice + 1];
-
-        for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
-        {
-            int readIdx = (int) currentSamplePosition;
-            if (readIdx < nextSlice && readIdx < activeBuffer.getNumSamples())
-            {
-                for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+                else
                 {
-                    int actCh = ch % activeBuffer.getNumChannels();
-                    buffer.addSample (ch, sample, activeBuffer.getSample (actCh, readIdx));
+                    isSliceSounding = false;
                 }
-                currentSamplePosition += pitchRatio;
             }
-            else
+        }
+
+        // Render current slice audio
+        if (isSliceSounding && (int) activeSliceReadPos < activeSliceEnd && (int) activeSliceReadPos < loadedBuffer.getNumSamples())
+        {
+            for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
             {
-                if (!isPlayingDice)
-                    isPlaying = false;
-                break;
+                int srcCh = ch % loadedBuffer.getNumChannels();
+                float sampleVal = loadedBuffer.getSample (srcCh, (int) activeSliceReadPos);
+                buffer.addSample (ch, i, sampleVal);
             }
+            activeSliceReadPos += currentPitchFactor;
         }
     }
 
-    // DSP FX Processing
-    for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+    // 1. Vintage Tape Saturation DSP
+    if (tapeDrive > 0.01f)
     {
-        float* d = buffer.getWritePointer (ch);
+        float driveGain = 1.0f + (tapeDrive * 5.0f);
+        for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+        {
+            float* data = buffer.getWritePointer (ch);
+            for (int i = 0; i < buffer.getNumSamples(); ++i)
+                data[i] = std::tanh (data[i] * driveGain) / std::tanh (driveGain);
+        }
+    }
+
+    // 2. Analog Tape Delay
+    if (delayMix > 0.01f && delayBuffer.getNumSamples() > 0)
+    {
+        int delayInSamples = (int) (delayTime * getSampleRate());
         for (int i = 0; i < buffer.getNumSamples(); ++i)
         {
-            float s = d[i];
-            if (driveAmount > 0.01f)
+            for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
             {
-                float dg = 1.0f + (driveAmount * 4.0f);
-                s = std::tanh (s * dg) / std::tanh (dg);
+                int readPos = (delayWritePos - delayInSamples + delayBuffer.getNumSamples()) % delayBuffer.getNumSamples();
+                float delayed = delayBuffer.getSample (ch, readPos);
+                float dry = buffer.getSample (ch, i);
+
+                delayBuffer.setSample (ch, delayWritePos, dry + (delayed * 0.45f));
+                buffer.setSample (ch, i, dry + (delayed * delayMix));
             }
-            if (crushAmount > 0.01f)
-            {
-                float steps = std::max (2.0f, 64.0f * (1.0f - crushAmount));
-                s = std::round (s * steps) / steps;
-            }
-            d[i] = s;
+            delayWritePos = (delayWritePos + 1) % delayBuffer.getNumSamples();
         }
     }
 
-    filter.setCutoffFrequency (filterCutoff);
+    // 3. Filter
+    filter.setCutoffFrequency (cutoff);
     juce::dsp::AudioBlock<float> block (buffer);
     juce::dsp::ProcessContextReplacing<float> ctx (block);
     filter.process (ctx);
 
-    if (spaceAmount > 0.01f)
+    // 4. Studio Reverb
+    if (rvbMix > 0.01f)
     {
-        reverbParams.roomSize = spaceAmount * 0.85f;
-        reverbParams.damping  = 0.4f;
-        reverbParams.wetLevel = spaceAmount * 0.65f;
-        reverbParams.dryLevel = 1.0f - (spaceAmount * 0.3f);
+        reverbParams.roomSize = rvbSize * 0.85f;
+        reverbParams.damping  = 0.5f;
+        reverbParams.wetLevel = rvbMix * 0.7f;
+        reverbParams.dryLevel = 1.0f - (rvbMix * 0.3f);
         reverb.setParameters (reverbParams);
         reverb.process (ctx);
     }
 
-    buffer.applyGain (gainAmount);
+    buffer.applyGain (masterOut);
 }
 
 bool EXAudioProcessor::hasEditor() const { return true; }
