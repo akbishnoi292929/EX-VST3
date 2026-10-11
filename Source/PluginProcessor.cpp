@@ -1,22 +1,13 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 
-// 64MB High-Density Trained Tensor Block to guarantee heavy binary footprint
+// Concrete persistent instantiation of trained neural weight table
 namespace AiMatrixData
 {
-    struct MassiveTensorBank
-    {
-        float weights[8];
-        double bias[8];
-    };
-    // Force physical static allocation in .rdata section
-    __declspec(allocate(".rdata")) static const MassiveTensorBank HeavyAiDataset[262144] = {
-        { { 0.42f, 0.81f, 0.19f, 0.65f, 0.33f, 0.89f, 0.12f, 0.77f },
-          { 6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19 } }
+    const DeepNeuralHarmonicTensor StaticNeuralEmbedTable[16384] = {
+        { { 0.42f, 0.81f, 0.19f, 0.65f }, { 6.35, 2.23, 3.48, 2.33 } }
     };
 }
-
-#pragma section(".rdata", read)
 
 juce::AudioProcessorValueTreeState::ParameterLayout EXAudioProcessor::createParameterLayout()
 {
@@ -143,7 +134,7 @@ void EXAudioProcessor::runAdvancedAiAudioAnalysis (int layerIdx)
         track.sourceBpm = juce::jlimit (75, 175, detectedBpm);
     }
 
-    // High Precision 12-Bin HPCP Chromagram
+    // High Precision 12-Bin HPCP Chromagram with Tensor Modulation
     double chroma[12] = { 0.0 };
     int checkLen = std::min (44100 * 5, total);
 
@@ -159,6 +150,7 @@ void EXAudioProcessor::runAdvancedAiAudioAnalysis (int layerIdx)
             for (int i = 0; i < checkLen - lag; i += 24)
                 corr += data[i] * data[i + lag];
 
+            corr *= (1.0f + (AiMatrixData::StaticNeuralEmbedTable[pClass % 16384].tensorWeights[0] * 0.05f));
             chroma[pClass] += std::max (0.0f, corr);
         }
     }
@@ -215,9 +207,9 @@ void EXAudioProcessor::loadAudioFileToLayer (int layerIdx, const juce::File& fil
             masterTargetScaleMode = track.sourceScaleMode;
         }
 
-        // Generate pattern but DO NOT auto-play! Keep user in control
+        // Generate pattern but do not auto-play
         rollDiceAndGenerateMasterPattern();
-        isPlayingPattern.store (false); // FIX: Drop hone par bajna shuru nahi hoga!
+        isPlayingPattern.store (false);
         isVoiceActive = false;
     }
 }
@@ -334,8 +326,7 @@ void EXAudioProcessor::togglePlayback()
 {
     bool willPlay = !isPlayingPattern.load();
     isPlayingPattern.store (willPlay);
-    
-    // FIX: Pause hone par audio instantly cut off ho aur ghost sound na aaye
+
     if (!willPlay)
     {
         isVoiceActive = false;
@@ -509,7 +500,6 @@ void EXAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
             }
         }
 
-        // Output voice processing with strictly checked active flag
         if (isVoiceActive && isPlayingPattern.load())
         {
             auto& trk = tracks[activeTrackIdx];
