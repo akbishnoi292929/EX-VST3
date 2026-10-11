@@ -5,9 +5,9 @@
 
 struct FlipStep
 {
-    int trackIdx = 0;       // 0, 1, or 2
+    int trackIdx = 0;
     int sliceIdx = 0;
-    int pitchOffset = 0;    // Quantized Semitones
+    int pitchOffset = 0;
     float velocity = 1.0f;
     bool isReverse = false;
     bool isGate = true;
@@ -79,14 +79,13 @@ public:
 
     AudioLayerTrack& getTrack (int index) { return tracks[juce::jlimit (0, 2, index)]; }
 
-    // Master Target Settings
     int masterTargetBpm = 130;
     int masterTargetKey = 0;
-    int masterTargetScaleMode = 0; // 0: Minor, 1: Major, 2: Dorian, 3: Phrygian
+    int masterTargetScaleMode = 0;
     bool halfTimeMode = false;
     GridDivision currentGrid = GridDivision::Eighth;
 
-    // 3D Dice Animation
+    // 3D Dice physics state
     std::atomic<bool> isDiceRolling { false };
     float diceRollProgress = 0.0f;
     int activeDiceNumber = 5;
@@ -96,7 +95,7 @@ public:
 
 private:
     juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
-    void runAdvancedAiAudioAnalysis (int layerIndex);
+    void runEmbeddedAiAnalysis (int layerIndex);
 
     AudioLayerTrack tracks[3];
     std::vector<FlipStep> patternSteps;
