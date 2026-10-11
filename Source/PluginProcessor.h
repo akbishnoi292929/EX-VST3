@@ -28,8 +28,8 @@ struct AudioLayerTrack
     juce::AudioSampleBuffer buffer;
     std::vector<int> sliceMarkers;
     int sourceBpm = 120;
-    int sourceKey = 0;          // 0: C, 1: C# ... 11: B
-    int sourceScaleMode = 0;    // 0: Minor, 1: Major, 2: Dorian, 3: Phrygian
+    int sourceKey = 0;
+    int sourceScaleMode = 0;
     float volume = 1.0f;
     bool isMute = false;
     bool hasAudio = false;
@@ -85,7 +85,6 @@ public:
     bool halfTimeMode = false;
     GridDivision currentGrid = GridDivision::Eighth;
 
-    // 3D Dice physics state
     std::atomic<bool> isDiceRolling { false };
     float diceRollProgress = 0.0f;
     int activeDiceNumber = 5;
@@ -95,7 +94,7 @@ public:
 
 private:
     juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
-    void runEmbeddedAiAnalysis (int layerIndex);
+    void runAdvancedAiAudioAnalysis (int layerIndex);
 
     AudioLayerTrack tracks[3];
     std::vector<FlipStep> patternSteps;
@@ -112,7 +111,7 @@ private:
     bool isVoiceActive = false;
     bool currentStepReverse = false;
 
-    // DSP Processors
+    // DSP Units
     juce::dsp::Reverb reverb;
     juce::dsp::Reverb::Parameters reverbParams;
     juce::dsp::StateVariableTPTFilter<float> filter;
