@@ -3,7 +3,13 @@
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_dsp/juce_dsp.h>
 
-enum class StemType { Master = 0, Vocals, Drums, Bass, Other };
+struct MelodyStep
+{
+    int sliceIndex = 0;
+    int pitchShiftSemis = 0; // Relative scale transposition
+    float velocity = 1.0f;
+    bool isGate = true;
+};
 
 class EXAudioProcessor : public juce::AudioProcessor
 {
@@ -35,61 +41,52 @@ public:
     void setStateInformation (const void* data, int sizeInBytes) override;
 
     void loadAudioFile (const juce::File& file);
-    void sliceAudio (int numSlices);
-    void detectTransientsAndSlice();
-    void setSlicePosition (int index, int newSamplePos);
-    void triggerStemSeparation();
-
-    // Playback, Dice & MIDI
-    void togglePlayPause();
-    bool getIsAuditioning() const { return isAuditioning.load(); }
-    void generateRandomMelodySequence();
+    void sliceAudioTransient();
+    void rollDiceAndGenerateMelody();
     juce::File exportCurrentSequenceAsMidi();
 
-    juce::AudioSampleBuffer& getAudioBuffer() { return activeBuffer; }
-    const std::vector<int>& getSlicePoints() const { return slicePoints; }
-    void selectStem (StemType stem);
-    StemType getCurrentStem() const { return currentStem; }
+    void toggleAudition();
+    bool isAuditionPlaying() const { return isAudition.load(); }
 
-    std::atomic<bool> isSeparating { false };
-    std::atomic<float> separationProgress { 0.0f };
-    juce::String detectedKey { "A MIN" };
-    int detectedBpm { 140 };
+    juce::AudioSampleBuffer& getAudioBuffer() { return loadedBuffer; }
+    const std::vector<int>& getSlicePoints() const { return slicePoints; }
+
+    // Source vs Target Parameters
+    int sourceBpm = 130;
+    int sourceKeyIdx = 0;
+    int targetBpm = 140;
+    int targetKeyIdx = 0; // 0: C, 1: C#, 2: D...
+    int targetScaleMode = 0; // 0: Minor, 1: Major
 
     juce::AudioProcessorValueTreeState apvts;
     juce::AudioFormatManager formatManager;
 
 private:
     juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
-    void detectKeyAndBpm();
+    void detectBpmAndRootKey();
 
-    juce::AudioSampleBuffer masterBuffer;
-    juce::AudioSampleBuffer vocalBuffer;
-    juce::AudioSampleBuffer drumBuffer;
-    juce::AudioSampleBuffer bassBuffer;
-    juce::AudioSampleBuffer otherBuffer;
-    juce::AudioSampleBuffer activeBuffer;
-
-    StemType currentStem = StemType::Master;
+    juce::AudioSampleBuffer loadedBuffer;
     std::vector<int> slicePoints;
-    std::vector<int> diceSequence;
+    std::vector<MelodyStep> melodyPattern;
 
-    // Dice Playback State
-    bool isPlayingDice = false;
-    int currentDiceStep = 0;
-    int diceStepSamples = 0;
-    int diceStepTimer = 0;
+    // Playback Engine
+    std::atomic<bool> isAudition { false };
+    int currentStep = 0;
+    int samplesPerStep = 11025; // 1/16 note default
+    int stepSampleCounter = 0;
+    double activeSliceReadPos = 0.0;
+    int activeSliceEnd = 0;
+    double currentPitchFactor = 1.0;
+    bool isSliceSounding = false;
 
-    int currentPlaybackSlice = -1;
-    double currentSamplePosition = 0.0;
-    bool isPlaying = false;
-    std::atomic<bool> isAuditioning { false };
-    int auditionSamplePos = 0;
-
-    // DSP Units
+    // DSP Rack
     juce::dsp::Reverb reverb;
     juce::dsp::Reverb::Parameters reverbParams;
     juce::dsp::StateVariableTPTFilter<float> filter;
+
+    // Delay line buffer
+    juce::AudioBuffer<float> delayBuffer;
+    int delayWritePos = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (EXAudioProcessor)
 };
