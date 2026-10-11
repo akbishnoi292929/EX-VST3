@@ -14,12 +14,12 @@ struct FlipStep
 
 enum class GridDivision
 {
-    Quarter = 0, // 1/4
-    Eighth,      // 1/8
-    Sixteenth,   // 1/16
-    Triplet1_3,  // 1/3 Triplet
-    Triplet1_6,  // 1/6 Triplet
-    Transient    // Onset Detection
+    Quarter = 0,
+    Eighth,
+    Sixteenth,
+    Triplet1_3,
+    Triplet1_6,
+    Transient
 };
 
 class EXAudioProcessor : public juce::AudioProcessor
@@ -67,13 +67,18 @@ public:
 
     int sourceBpm = 130;
     int sourceKey = 0;
-    int sourceScaleMode = 0; // 0: Minor, 1: Major
+    int sourceScaleMode = 0;
 
     int targetBpm = 140;
     int targetKey = 0;
-    int targetScaleMode = 0; // 0: Minor, 1: Major, 2: Dorian, 3: Phrygian
+    int targetScaleMode = 0;
     bool halfTimeMode = false;
     GridDivision currentGrid = GridDivision::Eighth;
+
+    // Dice animation state for GUI
+    std::atomic<bool> isDiceRolling { false };
+    float diceRollProgress = 0.0f;
+    int activeDiceNumber = 5;
 
     juce::AudioProcessorValueTreeState apvts;
     juce::AudioFormatManager formatManager;
