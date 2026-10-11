@@ -23,7 +23,7 @@ void VintageHardwareKnobLookAndFeel::drawRotarySlider (juce::Graphics& g, int x,
     g.setColour (juce::Colour (0x44ffffff));
     g.drawEllipse (centreX - capR, centreY - capR, capR * 2.0f, capR * 2.0f, 1.2f);
 
-    // White Pointer
+    // White Pointer Line
     juce::Path p;
     auto pointerLen = capR * 0.85f;
     p.addRectangle (-1.5f, -pointerLen, 3.0f, pointerLen);
@@ -63,7 +63,6 @@ void EXAudioProcessorEditor::setupKeySelector (juce::ComboBox& box)
 EXAudioProcessorEditor::EXAudioProcessorEditor (EXAudioProcessor& p)
     : AudioProcessorEditor (&p), audioProcessor (p)
 {
-    // Minimalist Clean Branding
     brandTitle.setText ("EX", juce::dontSendNotification);
     brandTitle.setFont (juce::Font (26.0f, juce::Font::bold));
     brandTitle.setColour (juce::Label::textColourId, juce::Colour (0xff9e1e1e));
@@ -215,7 +214,7 @@ void EXAudioProcessorEditor::filesDropped (const juce::StringArray& files, int, 
 
 void EXAudioProcessorEditor::paint (juce::Graphics& g)
 {
-    // Wood cheeks
+    // Wood Cheeks
     g.fillAll (juce::Colour (0xff4a2c18));
 
     // Console Body
@@ -259,7 +258,7 @@ void EXAudioProcessorEditor::paint (juce::Graphics& g)
     g.setColour (juce::Colour (0x66ff3b30));
     g.drawLine (cX, cY, scanX, scanY, 1.5f);
 
-    // Pulsing Waveform Display
+    // Pulsing Waveform Display inside radar
     auto& buf = audioProcessor.getAudioBuffer();
     if (buf.getNumSamples() > 0)
     {
@@ -292,14 +291,14 @@ void EXAudioProcessorEditor::paint (juce::Graphics& g)
     g.setColour (juce::Colour (0xffc4beb2));
     g.drawRoundedRectangle (lowerBar, 4.0f, 1.0f);
 
-    // Waveform Strip showing chopped pieces
+    // Waveform Strip
     auto stripArea = juce::Rectangle<float> (40.0f, 415.0f, static_cast<float> (getWidth() - 80), 105.0f);
-    g.setColour (juce::Colour (0xff212328)); // Dark tape bed
+    g.setColour (juce::Colour (0xff212328));
     g.fillRoundedRectangle (stripArea, 4.0f);
 
     if (buf.getNumSamples() > 0)
     {
-        g.setColour (juce::Colour (0xffe63946)); // Red wave
+        g.setColour (juce::Colour (0xffe63946));
         int total = buf.getNumSamples();
         float w = stripArea.getWidth();
         float mid = stripArea.getCentreY();
@@ -312,8 +311,8 @@ void EXAudioProcessorEditor::paint (juce::Graphics& g)
             g.drawLine (stripArea.getX() + x, mid - (v * 40.0f), stripArea.getX() + x, mid + (v * 40.0f), 1.0f);
         }
 
-        // Chop cut marks
-        g.setColour (juce::Colours::white);
+        // Clean white slice dividers
+        g.setColour (juce::Colour (0xccffffff));
         for (int slice : audioProcessor.getSlicePoints())
         {
             float cutX = stripArea.getX() + ((slice / (float) total) * w);
