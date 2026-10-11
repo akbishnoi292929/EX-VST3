@@ -5,7 +5,6 @@
 
 class EXAudioProcessorEditor : public juce::AudioProcessorEditor,
                                public juce::FileDragAndDropTarget,
-                               public juce::DragAndDropContainer,
                                public juce::Timer
 {
 public:
@@ -19,53 +18,44 @@ public:
     bool isInterestedInFileDrag (const juce::StringArray& files) override;
     void filesDropped (const juce::StringArray& files, int x, int y) override;
 
-    void mouseDown (const juce::MouseEvent& e) override;
-    void mouseDrag (const juce::MouseEvent& e) override;
-    void mouseUp (const juce::MouseEvent& e) override;
-
 private:
     EXAudioProcessor& audioProcessor;
 
-    juce::Label headerLabel;
-    juce::Label infoBadgeLabel;
+    // Header & Titles
+    juce::Label brandTitle;
+    juce::Label subTitle;
 
-    // Transport & Smart Buttons
-    juce::TextButton playPauseBtn;
-    juce::TextButton diceBtn;
-    juce::TextButton dragMidiBtn;
+    // Source Sample Controls (Detected + Manual Override)
+    juce::Label sourceSectionTitle;
+    juce::ComboBox sourceKeySelector;
+    juce::Slider sourceBpmSlider;
 
-    // Chops & AI Controls
-    juce::TextButton chop1_4Btn;
-    juce::TextButton chop1_8Btn;
-    juce::TextButton chop1_16Btn;
-    juce::TextButton chopTransientBtn;
-    juce::TextButton stemSplitBtn;
+    // Target Project Controls (Your Song Key & Tempo)
+    juce::Label targetSectionTitle;
+    juce::ComboBox targetKeySelector;
+    juce::Slider targetBpmSlider;
 
-    // Stem View Switcher Tabs
-    juce::TextButton masterTab;
-    juce::TextButton vocalTab;
-    juce::TextButton drumTab;
-    juce::TextButton bassTab;
-    juce::TextButton otherTab;
+    // Center Circular Oscilloscope / Radar + 3D Dice
+    juce::TextButton diceButton;
+    juce::TextButton playPauseButton;
+    juce::TextButton dragMidiButton;
 
-    // 6-Knob Studio Rack
-    juce::Slider driveKnob;
-    juce::Slider crushKnob;
-    juce::Slider spaceKnob;
-    juce::Slider filterKnob;
-    juce::Slider pitchKnob;
-    juce::Slider gainKnob;
+    // Vintage Knobs (Red Fluted Hardware Style)
+    juce::Slider tapeDriveKnob;
+    juce::Slider delayTimeKnob;
+    juce::Slider delayMixKnob;
+    juce::Slider reverbSizeKnob;
+    juce::Slider reverbMixKnob;
+    juce::Slider filterCutoffKnob;
+    juce::Slider masterOutKnob;
 
-    juce::Label driveLabel, crushLabel, spaceLabel, filterLabel, pitchLabel, gainLabel;
+    juce::Label tapeLabel, delayTimeLabel, delayMixLabel, rvbSizeLabel, rvbMixLabel, filterLabel, masterLabel;
 
     using Attachment = juce::AudioProcessorValueTreeState::SliderAttachment;
-    std::unique_ptr<Attachment> driveAtt, crushAtt, spaceAtt, filterAtt, pitchAtt, gainAtt;
+    std::unique_ptr<Attachment> tapeAtt, delayTimeAtt, delayMixAtt, rvbSizeAtt, rvbMixAtt, filterAtt, masterAtt;
 
-    int draggedSliceIndex = -1;
-    juce::Rectangle<int> waveArea;
-
-    void styleKnob (juce::Slider& s, juce::Label& l, const juce::String& name, const juce::String& suffix = "");
-    void styleButton (juce::TextButton& b, juce::Colour col);
+    void setupVintageKnob (juce::Slider& s, juce::Label& l, const juce::String& name);
+    void setupKeySelector (juce::ComboBox& box);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (EXAudioProcessorEditor)
 };
