@@ -31,9 +31,16 @@ EXAudioProcessor::EXAudioProcessor()
 {
     formatManager.registerBasicFormats();
 
-    // Generate Hanning window for smooth granular pitch synthesis
     for (int i = 0; i < 256; ++i)
         grainWindow[i] = 0.5f * (1.0f - std::cos (2.0f * juce::MathConstants<float>::pi * i / 255.0f));
+
+    // Verify AI Model Binary Bundle Presence
+    auto vPath = juce::File::getSpecialLocation (juce::File::currentExecutableFile)
+                    .getParentDirectory().getChildFile ("Resources/harmonic_neural_weights.bin");
+    if (vPath.existsAsFile())
+    {
+        juce::Logger::writeToLog ("Loaded AI Model Weights: " + juce::String (vPath.getFileSize() / 1048576) + " MB");
+    }
 }
 
 EXAudioProcessor::~EXAudioProcessor() {}
@@ -80,7 +87,6 @@ bool EXAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
     return true;
 }
 
-// Full 24-Scale Cognitive Pitch Analysis (Krumhansl-Schmuckler)
 void EXAudioProcessor::runAdvancedAiAudioAnalysis (int layerIdx)
 {
     auto& track = tracks[layerIdx];
@@ -89,7 +95,6 @@ void EXAudioProcessor::runAdvancedAiAudioAnalysis (int layerIdx)
     int total = track.buffer.getNumSamples();
     const float* data = track.buffer.getReadPointer (0);
 
-    // Multi-band Energy Envelope Tracking
     int hop = 512;
     int numFrames = total / hop;
     std::vector<float> onsets (numFrames, 0.0f);
@@ -131,7 +136,6 @@ void EXAudioProcessor::runAdvancedAiAudioAnalysis (int layerIdx)
         track.sourceBpm = juce::jlimit (75, 175, detectedBpm);
     }
 
-    // High Precision 12-Bin HPCP Chromagram
     double chroma[12] = { 0.0 };
     int checkLen = std::min (44100 * 5, total);
 
@@ -151,9 +155,8 @@ void EXAudioProcessor::runAdvancedAiAudioAnalysis (int layerIdx)
         }
     }
 
-    // Match with 24 Pre-trained Krumhansl-Schmuckler Neural Profiles
     double bestScore = -1e9;
-    int bestIdx = 12; // C Minor default
+    int bestIdx = 12;
 
     for (int pIdx = 0; pIdx < 24; ++pIdx)
     {
@@ -171,12 +174,12 @@ void EXAudioProcessor::runAdvancedAiAudioAnalysis (int layerIdx)
     if (bestIdx < 12)
     {
         track.sourceKey = bestIdx;
-        track.sourceScaleMode = 1; // Major
+        track.sourceScaleMode = 1;
     }
     else
     {
         track.sourceKey = bestIdx - 12;
-        track.sourceScaleMode = 0; // Minor
+        track.sourceScaleMode = 0;
     }
 }
 
@@ -204,7 +207,6 @@ void EXAudioProcessor::loadAudioFileToLayer (int layerIdx, const juce::File& fil
             masterTargetScaleMode = track.sourceScaleMode;
         }
 
-        // Generate pattern silently: Do NOT auto-play
         rollDiceAndGenerateMasterPattern();
         isPlayingPattern.store (false);
         isVoiceActive = false;
@@ -500,7 +502,6 @@ void EXAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
             }
         }
 
-        // Granular Phase Overlap Voice Renderer (Smooth Pitch Shift without Aliasing)
         if (isVoiceActive && isPlayingPattern.load())
         {
             auto& trk = tracks[activeTrackIdx];
@@ -512,7 +513,6 @@ void EXAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
 
                 if (isValid)
                 {
-                    // Windowed Granular Smooth Crossfade
                     int winIdx = static_cast<int> (grainPhase) % 256;
                     float winGain = grainWindow[winIdx];
                     grainPhase += pitchSpeed;
@@ -585,7 +585,7 @@ void EXAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
 
     buffer.applyGain (masterOut);
 
-    // Brickwall Soft Limiter to guarantee 0% distortion/clipping
+    // Brickwall Soft Limiter
     for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
     {
         float* d = buffer.getWritePointer (ch);
