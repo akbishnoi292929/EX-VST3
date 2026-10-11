@@ -41,7 +41,6 @@ public:
     void mouseDrag (const juce::MouseEvent& e) override;
     void mouseUp (const juce::MouseEvent& e) override;
 
-    // Spacebar Key Listener
     bool keyPressed (const juce::KeyPress& key) override;
 
 private:
