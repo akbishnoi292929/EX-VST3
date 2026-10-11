@@ -5,8 +5,9 @@
 
 struct FlipStep
 {
-    int sliceIdx = 0;
-    int pitchOffset = 0;
+    int trackIdx = 0;       // Which layer (0, 1, or 2)
+    int sliceIdx = 0;       // Slice index in that track
+    int pitchOffset = 0;    // Semitones to snap to master target
     float velocity = 1.0f;
     bool isReverse = false;
     bool isGate = true;
@@ -20,6 +21,20 @@ enum class GridDivision
     Triplet1_3,
     Triplet1_6,
     Transient
+};
+
+struct AudioLayerTrack
+{
+    juce::AudioSampleBuffer buffer;
+    std::vector<int> sliceMarkers;
+    int sourceBpm = 120;
+    int sourceKey = 0;          // 0: C, 1: C# ... 11: B
+    int sourceScaleMode = 0;    // 0: Minor, 1: Major
+    float volume = 1.0f;
+    bool isMute = false;
+    bool isSolo = false;
+    bool hasAudio = false;
+    juce::String fileName = "EMPTY SLOT";
 };
 
 class EXAudioProcessor : public juce::AudioProcessor
@@ -51,31 +66,29 @@ public:
     void getStateInformation (juce::MemoryBlock& destData) override;
     void setStateInformation (const void* data, int sizeInBytes) override;
 
-    void loadAudioFile (const juce::File& file);
-    void applyGridSlicing (GridDivision div);
-    void setSlicePosition (int markerIndex, int newSamplePosition);
-    void rollDiceAndFlipPattern();
+    // Multi-Layer Audio Management
+    void loadAudioFileToLayer (int layerIndex, const juce::File& file);
+    void applyGridSlicingToLayer (int layerIndex, GridDivision div);
+    void setSlicePosition (int layerIndex, int markerIndex, int newSamplePosition);
+    void clearLayer (int layerIndex);
 
+    void rollDiceAndGenerateMasterPattern();
     juce::File exportCurrentAsAudioWav();
     juce::File exportCurrentAsMidi();
 
     void togglePlayback();
     bool isPlayingActive() const { return isPlayingPattern.load(); }
 
-    juce::AudioSampleBuffer& getAudioBuffer() { return sampleBuffer; }
-    const std::vector<int>& getSlicePoints() const { return sliceMarkers; }
+    AudioLayerTrack& getTrack (int index) { return tracks[juce::jlimit (0, 2, index)]; }
 
-    int sourceBpm = 130;
-    int sourceKey = 0;
-    int sourceScaleMode = 0;
-
-    int targetBpm = 140;
-    int targetKey = 0;
-    int targetScaleMode = 0;
+    // Master Project Target Settings
+    int masterTargetBpm = 130;
+    int masterTargetKey = 0;        // 0: C, 1: C# ...
+    int masterTargetScaleMode = 0;   // 0: Minor, 1: Major, 2: Dorian, 3: Phrygian
     bool halfTimeMode = false;
     GridDivision currentGrid = GridDivision::Eighth;
 
-    // Dice animation state for GUI
+    // Dice 3D Animation State
     std::atomic<bool> isDiceRolling { false };
     float diceRollProgress = 0.0f;
     int activeDiceNumber = 5;
@@ -85,10 +98,9 @@ public:
 
 private:
     juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
-    void analyzeAudioBpmAndKey();
+    void analyzeAudioBpmAndKey (int layerIndex);
 
-    juce::AudioSampleBuffer sampleBuffer;
-    std::vector<int> sliceMarkers;
+    AudioLayerTrack tracks[3];
     std::vector<FlipStep> patternSteps;
 
     std::atomic<bool> isPlayingPattern { false };
@@ -96,13 +108,15 @@ private:
     int samplesPerStep = 11025;
     int stepClock = 0;
 
+    // Active playback voice state
+    int activeTrackIdx = 0;
     double playheadPosition = 0.0;
     int playheadEnd = 0;
     double pitchSpeed = 1.0;
     bool isVoiceActive = false;
     bool currentStepReverse = false;
 
-    // DSP Processors
+    // Master DSP FX Rack
     juce::dsp::Reverb reverb;
     juce::dsp::Reverb::Parameters reverbParams;
     juce::dsp::StateVariableTPTFilter<float> filter;
