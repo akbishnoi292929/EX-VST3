@@ -9,13 +9,18 @@ on:
 
 jobs:
   build-windows:
-    runs-on: windows-latest
+    runs-on: windows-2022
 
     steps:
     - name: Checkout Repository
       uses: actions/checkout@v4
       with:
         submodules: recursive
+
+    - name: Set up MSVC Environment
+      uses: ilammy/msvc-dev-cmd@v1
+      with:
+        arch: x64
 
     - name: Cache JUCE Source
       uses: actions/cache@v4
@@ -27,12 +32,10 @@ jobs:
       shell: bash
       run: |
         mkdir -p Resources/ai_models
-        # Create physical high-precision neural tensor weights file (~45MB)
         python3 -c "
         import os, struct, math
         weights_path = 'Resources/ai_models/harmonic_neural_weights.bin'
         with open(weights_path, 'wb') as f:
-            # Generate 11 million float32 trained weights for scale/motif inference
             for i in range(11000000):
                 w = math.sin(i * 0.01) * 0.5
                 f.write(struct.pack('<f', w))
@@ -43,8 +46,7 @@ jobs:
       run: >
         cmake -B build
         -DCMAKE_BUILD_TYPE=Release
-        -G "Visual Studio 17 2022"
-        -A x64
+        -G "Ninja"
 
     - name: Build VST3 Target Only
       run: cmake --build build --config Release --target EX_VST3 --parallel
@@ -52,8 +54,10 @@ jobs:
     - name: Bundle Heavy AI Models into VST3 Package
       shell: bash
       run: |
-        # Inject AI model directly into the VST3 bundle structure
         TARGET_DIR="build/EX_artefacts/Release/VST3/EX.vst3/Contents/Resources"
+        if [ ! -d "$TARGET_DIR" ]; then
+          TARGET_DIR="build/EX_artefacts/VST3/EX.vst3/Contents/Resources"
+        fi
         mkdir -p "$TARGET_DIR"
         cp Resources/ai_models/harmonic_neural_weights.bin "$TARGET_DIR/"
         ls -lh "$TARGET_DIR"
@@ -62,10 +66,9 @@ jobs:
       shell: bash
       run: |
         mkdir -p dist
-        cd build/EX_artefacts/Release/VST3
-        # Store without high compression to retain heavy binary size
-        7z a -mx=1 -tzip "../../../../dist/EX-VST3-Windows-x64.zip" EX.vst3
-        cd ../../../..
+        VST_PATH=$(find build -name "EX.vst3" -type d | head -n 1)
+        echo "Found VST3 at: $VST_PATH"
+        7z a -mx=1 -tzip dist/EX-VST3-Windows-x64.zip "$VST_PATH"
         ls -lh dist/
 
     - name: Upload VST3 Release Artifact
