@@ -116,7 +116,7 @@ EXAudioProcessorEditor::EXAudioProcessorEditor (EXAudioProcessor& p)
         {
             juce::StringArray files;
             files.add (mf.getFullPathName());
-            performExternalDragDropOfFiles (files, false);
+            juce::DragAndDropContainer::performExternalDragDropOfFiles (files, false);
         }
     };
     addAndMakeVisible (dragMidiButton);
