@@ -112,7 +112,11 @@ private:
     bool isVoiceActive = false;
     bool currentStepReverse = false;
 
-    // DSP Processors
+    // Granular Pitch Shifter State
+    double grainPhase = 0.0;
+    float grainWindow[256];
+
+    // DSP Units
     juce::dsp::Reverb reverb;
     juce::dsp::Reverb::Parameters reverbParams;
     juce::dsp::StateVariableTPTFilter<float> filter;
