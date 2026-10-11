@@ -2,6 +2,7 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_dsp/juce_dsp.h>
+#include "AiWeightsMatrix.h"
 
 struct FlipStep
 {
@@ -111,7 +112,7 @@ private:
     bool isVoiceActive = false;
     bool currentStepReverse = false;
 
-    // DSP Units
+    // DSP Processors
     juce::dsp::Reverb reverb;
     juce::dsp::Reverb::Parameters reverbParams;
     juce::dsp::StateVariableTPTFilter<float> filter;
