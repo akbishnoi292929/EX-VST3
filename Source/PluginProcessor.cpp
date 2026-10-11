@@ -80,37 +80,82 @@ void EXAudioProcessor::analyzeAudioBpmAndKey()
 {
     if (sampleBuffer.getNumSamples() == 0) return;
 
-    double lenSec = sampleBuffer.getNumSamples() / 44100.0;
-    if (lenSec > 0.4)
+    int totalSamples = sampleBuffer.getNumSamples();
+    const float* data = sampleBuffer.getReadPointer (0);
+
+    // 1. Accurate Energy-Envelope BPM Beat Tracker
+    int stepSize = 441; // 10ms window
+    int numFrames = totalSamples / stepSize;
+    std::vector<float> energyEnvelope (numFrames, 0.0f);
+
+    for (int f = 0; f < numFrames; ++f)
     {
-        double beats = std::round ((lenSec / 60.0) * 135.0);
-        if (beats < 4.0) beats = 4.0;
-        sourceBpm = juce::jlimit (70, 180, static_cast<int> (std::round ((beats / lenSec) * 60.0)));
+        float sum = 0.0f;
+        for (int i = 0; i < stepSize; ++i)
+        {
+            float s = data[f * stepSize + i];
+            sum += s * s;
+        }
+        energyEnvelope[f] = std::sqrt (sum / stepSize);
     }
-    targetBpm = sourceBpm;
 
-    // Harmonic autocorrelation peak detection
-    const float* sData = sampleBuffer.getReadPointer (0);
-    int checkLen = std::min (44100 * 2, sampleBuffer.getNumSamples());
-    float bestCorr = 0.0f;
-    int bestLag = 200;
+    // Auto-correlate energy envelope for tempo lag (60 to 180 BPM)
+    float maxCorr = 0.0f;
+    int bestLagFrames = 44; // ~135 BPM default
 
-    for (int lag = 80; lag < 500; lag += 4)
+    for (int lag = 33; lag <= 100; ++lag) // ~60 BPM to 180 BPM
     {
         float corr = 0.0f;
-        for (int i = 0; i < checkLen - lag; i += 16)
-            corr += sData[i] * sData[i + lag];
-        if (corr > bestCorr)
+        for (size_t f = 0; f < energyEnvelope.size() - lag; ++f)
+            corr += energyEnvelope[f] * energyEnvelope[f + lag];
+
+        if (corr > maxCorr)
         {
-            bestCorr = corr;
-            bestLag = lag;
+            maxCorr = corr;
+            bestLagFrames = lag;
         }
     }
 
-    double freq = 44100.0 / (double) bestLag;
-    int midiPitch = (int) std::round (69.0 + 12.0 * std::log2 (freq / 440.0));
-    sourceKey = juce::jlimit (0, 11, ((midiPitch % 12) + 12) % 12);
-    sourceScaleMode = 0; // Default minor
+    double beatDurationSeconds = (bestLagFrames * stepSize) / 44100.0;
+    if (beatDurationSeconds > 0.25)
+    {
+        sourceBpm = juce::jlimit (70, 180, (int) std::round (60.0 / beatDurationSeconds));
+    }
+    targetBpm = sourceBpm;
+
+    // 2. 12-Bin Musical Chromagram Key Detection
+    double chromaEnergy[12] = { 0.0 };
+    int maxAnalyze = std::min (44100 * 3, totalSamples);
+
+    for (int lag = 80; lag < 450; lag += 2)
+    {
+        double freq = 44100.0 / lag;
+        if (freq >= 65.4 && freq <= 523.25) // C2 to C5
+        {
+            int midiNote = (int) std::round (69.0 + 12.0 * std::log2 (freq / 440.0));
+            int pitchClass = ((midiNote % 12) + 12) % 12;
+
+            float corr = 0.0f;
+            for (int i = 0; i < maxAnalyze - lag; i += 24)
+                corr += data[i] * data[i + lag];
+
+            chromaEnergy[pitchClass] += std::max (0.0f, corr);
+        }
+    }
+
+    int bestKey = 0;
+    double maxChroma = 0.0;
+    for (int k = 0; k < 12; ++k)
+    {
+        if (chromaEnergy[k] > maxChroma)
+        {
+            maxChroma = chromaEnergy[k];
+            bestKey = k;
+        }
+    }
+
+    sourceKey = bestKey;
+    sourceScaleMode = 0; // Minor
     targetKey = sourceKey;
     targetScaleMode = sourceScaleMode;
 }
@@ -180,31 +225,58 @@ void EXAudioProcessor::rollDiceAndFlipPattern()
     int count = static_cast<int> (sliceMarkers.size());
     if (count == 0) return;
 
+    // Trigger Dice 3D Roll Animation
+    isDiceRolling.store (true);
+    diceRollProgress = 0.0f;
     juce::Random rng;
-    // Musical Chord-Tones & Extensions (Minor / Major / Modes)
-    std::vector<int> intervals;
-    if (targetScaleMode == 1) // Major
-        intervals = { 0, 2, 4, 7, 9, 12, 16 };
-    else if (targetScaleMode == 2) // Dorian
-        intervals = { 0, 2, 3, 7, 9, 12, 14 };
-    else if (targetScaleMode == 3) // Phrygian
-        intervals = { 0, 1, 3, 7, 8, 12, 15 };
-    else // Natural Minor
-        intervals = { 0, 3, 5, 7, 10, 12, 15 };
+    activeDiceNumber = 1 + rng.nextInt (6);
+
+    // Musical Scale Palette
+    std::vector<int> chords;
+    if (targetScaleMode == 1)      // Major: 1, 3, 5, 6, 8, 10
+        chords = { 0, 4, 7, 9, 12, 16, 2 };
+    else if (targetScaleMode == 2) // Dorian: 1, b3, 4, 5, 6, b7
+        chords = { 0, 3, 5, 7, 9, 10, 14 };
+    else if (targetScaleMode == 3) // Phrygian (Dark Trap): 1, b2, 4, 5, b6, b7
+        chords = { 0, 1, 5, 7, 8, 10, 12 };
+    else                           // Natural Minor: 1, b3, 4, 5, b6, b7
+        chords = { 0, 3, 5, 7, 8, 10, 12 };
 
     int keyDelta = targetKey - sourceKey;
 
-    // Generates a rich, syncopated melody loop
+    // Call-and-Response Loop Progression (Bar 1: Intro phrase, Bar 2: Response, Bar 3: High Tension, Bar 4: Drop resolution)
+    int rootSlice = rng.nextInt (std::max (1, count / 2));
+    int bounceSlice = (rootSlice + 2) % count;
+
     for (int i = 0; i < 16; ++i)
     {
-        FlipStep step;
-        // Natural trap/RnB groove rhythm
-        step.isGate = (i % 4 == 0) || (i % 4 == 2) || (rng.nextFloat() > 0.40f);
-        step.sliceIdx = rng.nextInt (count);
-        step.pitchOffset = keyDelta + intervals[(size_t) rng.nextInt ((int) intervals.size())];
-        step.velocity = 0.82f + (rng.nextFloat() * 0.18f);
-        step.isReverse = (rng.nextFloat() > 0.80f);
-        patternSteps.push_back (step);
+        FlipStep s;
+        // Hip-hop syncopation (Steps 0, 3, 6, 8, 10, 12, 14)
+        if (i == 0 || i == 6 || i == 8 || i == 12)
+        {
+            s.isGate = true;
+            s.sliceIdx = rootSlice;
+            s.pitchOffset = keyDelta + chords[0]; // Anchor Root
+            s.velocity = 1.0f;
+            s.isReverse = false;
+        }
+        else if (i == 3 || i == 10 || i == 14)
+        {
+            s.isGate = true;
+            s.sliceIdx = bounceSlice;
+            s.pitchOffset = keyDelta + chords[rng.nextInt ((int) chords.size())];
+            s.velocity = 0.85f;
+            s.isReverse = (rng.nextFloat() > 0.65f); // Reverse fill
+        }
+        else
+        {
+            s.isGate = (rng.nextFloat() > 0.50f);
+            s.sliceIdx = rng.nextInt (count);
+            s.pitchOffset = keyDelta + chords[rng.nextInt ((int) chords.size())];
+            s.velocity = 0.75f;
+            s.isReverse = false;
+        }
+        patternSteps.push_back (s);
     }
 
     currentStepIndex = 0;
