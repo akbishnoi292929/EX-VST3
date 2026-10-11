@@ -6,9 +6,9 @@
 
 struct FlipStep
 {
-    int trackIdx = 0;
+    int trackIdx = 0;       // 0, 1, or 2
     int sliceIdx = 0;
-    int pitchOffset = 0;
+    int pitchOffset = 0;    // Semitones
     float velocity = 1.0f;
     bool isReverse = false;
     bool isGate = true;
@@ -30,7 +30,7 @@ struct AudioLayerTrack
     std::vector<int> sliceMarkers;
     int sourceBpm = 120;
     int sourceKey = 0;
-    int sourceScaleMode = 0;
+    int sourceScaleMode = 0; // 0: Minor, 1: Major
     float volume = 1.0f;
     bool isMute = false;
     bool hasAudio = false;
@@ -105,18 +105,15 @@ private:
     int samplesPerStep = 11025;
     int stepClock = 0;
 
+    // Active playback voice state
     int activeTrackIdx = 0;
     double playheadPosition = 0.0;
     int playheadEnd = 0;
-    double pitchSpeed = 1.0;
+    double playbackSpeedRatio = 1.0;
     bool isVoiceActive = false;
     bool currentStepReverse = false;
 
-    // Granular Pitch Shifter State
-    double grainPhase = 0.0;
-    float grainWindow[256];
-
-    // DSP Units
+    // DSP Processors
     juce::dsp::Reverb reverb;
     juce::dsp::Reverb::Parameters reverbParams;
     juce::dsp::StateVariableTPTFilter<float> filter;
