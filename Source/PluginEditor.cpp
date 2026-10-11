@@ -63,14 +63,14 @@ void EXAudioProcessorEditor::setupKeySelector (juce::ComboBox& box)
 EXAudioProcessorEditor::EXAudioProcessorEditor (EXAudioProcessor& p)
     : AudioProcessorEditor (&p), audioProcessor (p)
 {
-    // Real Branding
+    // Minimalist Clean Branding
     brandTitle.setText ("EX", juce::dontSendNotification);
     brandTitle.setFont (juce::Font (26.0f, juce::Font::bold));
-    brandTitle.setColour (juce::Label::textColourId, juce::Colour (0xff9e1e1e)); // Deep Crimson Red
+    brandTitle.setColour (juce::Label::textColourId, juce::Colour (0xff9e1e1e));
     addAndMakeVisible (brandTitle);
 
-    subTitle.setText ("HEARTLESS SAMPLE FLIPPER // JO SABKA KAAT TI HAI, AB SAMPLE KAATEGI", juce::dontSendNotification);
-    subTitle.setFont (juce::Font (10.5f, juce::Font::bold));
+    subTitle.setText ("HEARTLESS SAMPLE FLIPPER", juce::dontSendNotification);
+    subTitle.setFont (juce::Font (11.0f, juce::Font::bold));
     subTitle.setColour (juce::Label::textColourId, juce::Colour (0xff63666f));
     addAndMakeVisible (subTitle);
 
@@ -285,7 +285,7 @@ void EXAudioProcessorEditor::paint (juce::Graphics& g)
     g.drawRoundedRectangle (leftBox, 4.0f, 1.0f);
     g.drawRoundedRectangle (rightBox, 4.0f, 1.0f);
 
-    // Lower Plate: Slices Display Bed (Kaatne Ka Maidan)
+    // Lower Plate: Slices Display Bed
     auto lowerBar = juce::Rectangle<float> (30.0f, 335.0f, static_cast<float> (getWidth() - 60), 200.0f);
     g.setColour (juce::Colour (0xffdfdbcf));
     g.fillRoundedRectangle (lowerBar, 4.0f);
@@ -312,7 +312,7 @@ void EXAudioProcessorEditor::paint (juce::Graphics& g)
             g.drawLine (stripArea.getX() + x, mid - (v * 40.0f), stripArea.getX() + x, mid + (v * 40.0f), 1.0f);
         }
 
-        // Chop cut marks (Kahan kahan se kata hai)
+        // Chop cut marks
         g.setColour (juce::Colours::white);
         for (int slice : audioProcessor.getSlicePoints())
         {
@@ -324,14 +324,14 @@ void EXAudioProcessorEditor::paint (juce::Graphics& g)
     {
         g.setColour (juce::Colour (0xff707584));
         g.setFont (12.0f);
-        g.drawText ("DROP SAMPLE TO SLICE // YAHAN TUKDE KATEGA", stripArea.toNearestInt(), juce::Justification::centred);
+        g.drawText ("DROP SAMPLE", stripArea.toNearestInt(), juce::Justification::centred);
     }
 }
 
 void EXAudioProcessorEditor::resized()
 {
     brandTitle.setBounds (30, 10, 60, 32);
-    subTitle.setBounds (95, 18, 550, 20);
+    subTitle.setBounds (95, 18, 400, 20);
 
     // Left FX Unit
     delayTimeKnob.setBounds (45, 88, 68, 78);
