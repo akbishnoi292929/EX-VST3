@@ -34,12 +34,12 @@ EXAudioProcessor::EXAudioProcessor()
     for (int i = 0; i < 256; ++i)
         grainWindow[i] = 0.5f * (1.0f - std::cos (2.0f * juce::MathConstants<float>::pi * i / 255.0f));
 
-    // Verify AI Model Binary Bundle Presence
+    // Verify AI Model Binary Bundle Presence (using correct juce::File::getSize())
     auto vPath = juce::File::getSpecialLocation (juce::File::currentExecutableFile)
                     .getParentDirectory().getChildFile ("Resources/harmonic_neural_weights.bin");
     if (vPath.existsAsFile())
     {
-        juce::Logger::writeToLog ("Loaded AI Model Weights: " + juce::String (vPath.getFileSize() / 1048576) + " MB");
+        juce::Logger::writeToLog ("Loaded AI Model Weights: " + juce::String (vPath.getSize() / 1048576) + " MB");
     }
 }
 
