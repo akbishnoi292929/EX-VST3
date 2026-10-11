@@ -71,20 +71,52 @@ void EXAudioProcessorEditor::setupModeSelector (juce::ComboBox& box)
 
 void EXAudioProcessorEditor::draw3DDice (juce::Graphics& g, float cx, float cy, float size)
 {
-    auto r = juce::Rectangle<float> (cx - size * 0.5f, cy - size * 0.5f, size, size);
-    g.setColour (juce::Colour (0xffd92b2b));
-    g.fillRoundedRectangle (r, 6.0f);
-    g.setColour (juce::Colour (0xff8f1616));
-    g.drawRoundedRectangle (r, 6.0f, 2.0f);
+    juce::Graphics::ScopedSaveState state (g);
 
-    // 5-dot Dice layout
+    float rollAngle = 0.0f;
+    if (audioProcessor.isDiceRolling.load())
+        rollAngle = audioProcessor.diceRollProgress * juce::MathConstants<float>::twoPi * 3.0f;
+
+    // 3D Shadow
+    g.setColour (juce::Colour (0x66000000));
+    g.fillRoundedRectangle (cx - size * 0.45f + 4.0f, cy - size * 0.45f + 6.0f, size * 0.9f, size * 0.9f, 8.0f);
+
+    // Dynamic rotation transform
+    auto transform = juce::AffineTransform::rotation (rollAngle, cx, cy);
+    g.addTransform (transform);
+
+    // Isometric 3D Red Cube Face
+    auto r = juce::Rectangle<float> (cx - size * 0.5f, cy - size * 0.5f, size, size);
+    g.setColour (juce::Colour (0xffd62828));
+    g.fillRoundedRectangle (r, 8.0f);
+
+    // Bevel highlights
+    g.setColour (juce::Colour (0x55ffffff));
+    g.drawRoundedRectangle (r, 8.0f, 2.0f);
+
+    // Draw Dynamic Dots based on active face
     g.setColour (juce::Colours::white);
     float dot = size * 0.16f;
-    g.fillEllipse (cx - dot * 0.5f, cy - dot * 0.5f, dot, dot); // center
-    g.fillEllipse (cx - size * 0.28f, cy - size * 0.28f, dot, dot); // top left
-    g.fillEllipse (cx + size * 0.28f - dot, cy - size * 0.28f, dot, dot); // top right
-    g.fillEllipse (cx - size * 0.28f, cy + size * 0.28f - dot, dot, dot); // bottom left
-    g.fillEllipse (cx + size * 0.28f - dot, cy + size * 0.28f - dot, dot, dot); // bottom right
+    int num = audioProcessor.activeDiceNumber;
+
+    if (num % 2 == 1) // Center dot
+        g.fillEllipse (cx - dot * 0.5f, cy - dot * 0.5f, dot, dot);
+
+    if (num >= 2)
+    {
+        g.fillEllipse (cx - size * 0.28f, cy - size * 0.28f, dot, dot);
+        g.fillEllipse (cx + size * 0.28f - dot, cy + size * 0.28f - dot, dot, dot);
+    }
+    if (num >= 4)
+    {
+        g.fillEllipse (cx + size * 0.28f - dot, cy - size * 0.28f, dot, dot);
+        g.fillEllipse (cx - size * 0.28f, cy + size * 0.28f - dot, dot, dot);
+    }
+    if (num == 6)
+    {
+        g.fillEllipse (cx - size * 0.28f, cy - dot * 0.5f, dot, dot);
+        g.fillEllipse (cx + size * 0.28f - dot, cy - dot * 0.5f, dot, dot);
+    }
 }
 
 EXAudioProcessorEditor::EXAudioProcessorEditor (EXAudioProcessor& p)
@@ -140,7 +172,7 @@ EXAudioProcessorEditor::EXAudioProcessorEditor (EXAudioProcessor& p)
     targetBpmSlider.onValueChange = [this]() { audioProcessor.targetBpm = (int) targetBpmSlider.getValue(); };
     addAndMakeVisible (targetBpmSlider);
 
-    // Grid Slicing Buttons
+    // Grid Slicing Selectors
     auto setupGridBtn = [this](juce::TextButton& b, const juce::String& text, GridDivision div) {
         b.setButtonText (text);
         b.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff2b2e35));
@@ -159,7 +191,7 @@ EXAudioProcessorEditor::EXAudioProcessorEditor (EXAudioProcessor& p)
     // Center Controls
     diceButton.setButtonText ("");
     diceButton.setColour (juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
-    diceButton.onClick = [this]() { audioProcessor.rollDiceAndFlipPattern(); repaint(); };
+    diceButton.onClick = [this]() { audioProcessor.rollDiceAndFlipPattern(); };
     addAndMakeVisible (diceButton);
 
     playPauseButton.setButtonText (juce::CharPointer_UTF8 ("\xe2\x96\xb6 PLAY"));
@@ -224,7 +256,7 @@ EXAudioProcessorEditor::EXAudioProcessorEditor (EXAudioProcessor& p)
     masterAtt    = std::make_unique<Attachment> (audioProcessor.apvts, "MASTER_OUT", masterOutKnob);
 
     setSize (840, 560);
-    startTimerHz (30);
+    startTimerHz (40); // 40 FPS smooth animations
 }
 
 EXAudioProcessorEditor::~EXAudioProcessorEditor()
@@ -241,6 +273,17 @@ void EXAudioProcessorEditor::timerCallback()
     radarAngle += 0.05f;
     if (radarAngle > juce::MathConstants<float>::twoPi)
         radarAngle -= juce::MathConstants<float>::twoPi;
+
+    // Dice rolling animation decay
+    if (audioProcessor.isDiceRolling.load())
+    {
+        audioProcessor.diceRollProgress += 0.08f;
+        if (audioProcessor.diceRollProgress >= 1.0f)
+        {
+            audioProcessor.diceRollProgress = 1.0f;
+            audioProcessor.isDiceRolling.store (false);
+        }
+    }
 
     repaint();
 }
@@ -337,8 +380,8 @@ void EXAudioProcessorEditor::paint (juce::Graphics& g)
     g.setColour (juce::Colour (0x66ff3b30));
     g.drawLine (cX, cY, scanX, scanY, 1.5f);
 
-    // Draw Real 3D Dice inside Radar
-    draw3DDice (g, cX, cY, 44.0f);
+    // Draw Realistic 3D Rolling Dice
+    draw3DDice (g, cX, cY, 50.0f);
 
     // Inset Boxes
     g.setColour (juce::Colour (0xffe2dfd4));
@@ -378,7 +421,7 @@ void EXAudioProcessorEditor::paint (juce::Graphics& g)
             g.drawLine (waveformArea.getX() + x, mid - (v * 40.0f), waveformArea.getX() + x, mid + (v * 40.0f), 1.0f);
         }
 
-        // Draggable Slice Divider Lines with Handles
+        // Draggable Slice Divider Lines with Gold Handles
         for (int slice : audioProcessor.getSlicePoints())
         {
             float cutX = waveformArea.getX() + ((slice / (float) total) * w);
@@ -423,7 +466,7 @@ void EXAudioProcessorEditor::resized()
 
     // Center Controls
     int cX = getWidth() / 2;
-    diceButton.setBounds (cX - 35, 168, 70, 70); // Over the 3D dice
+    diceButton.setBounds (cX - 38, 165, 76, 76); // Exactly covers 3D Dice
     playPauseButton.setBounds (cX - 80, 285, 75, 28);
     dragMidiButton.setBounds (cX + 5, 285, 75, 28);
 
