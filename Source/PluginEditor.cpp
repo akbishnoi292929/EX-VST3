@@ -1,131 +1,144 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 
-void EXAudioProcessorEditor::styleKnob (juce::Slider& s, juce::Label& l, const juce::String& name, const juce::String& suffix)
+void EXAudioProcessorEditor::setupVintageKnob (juce::Slider& s, juce::Label& l, const juce::String& name)
 {
     s.setSliderStyle (juce::Slider::RotaryVerticalDrag);
-    s.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 55, 16);
-    s.setTextValueSuffix (suffix);
-    s.setColour (juce::Slider::rotarySliderFillColourId, juce::Colour (0xffff2a42));
-    s.setColour (juce::Slider::rotarySliderOutlineColourId, juce::Colour (0xff252830));
-    s.setColour (juce::Slider::thumbColourId, juce::Colours::white);
+    s.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 50, 15);
+    s.setColour (juce::Slider::rotarySliderFillColourId, juce::Colour (0xffb82525)); // Deep Vintage Crimson
+    s.setColour (juce::Slider::rotarySliderOutlineColourId, juce::Colour (0xff36383e)); // Bakelite Dark
+    s.setColour (juce::Slider::thumbColourId, juce::Colour (0xfff0f0f0));
     s.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
-    s.setColour (juce::Slider::textBoxTextColourId, juce::Colour (0xffcccccc));
+    s.setColour (juce::Slider::textBoxTextColourId, juce::Colour (0xff2b2b2b));
     addAndMakeVisible (s);
 
     l.setText (name, juce::dontSendNotification);
     l.setFont (juce::Font (11.0f, juce::Font::bold));
     l.setJustificationType (juce::Justification::centred);
-    l.setColour (juce::Label::textColourId, juce::Colour (0xff888f9e));
+    l.setColour (juce::Label::textColourId, juce::Colour (0xff4a4c52));
     addAndMakeVisible (l);
 }
 
-void EXAudioProcessorEditor::styleButton (juce::TextButton& b, juce::Colour col)
+void EXAudioProcessorEditor::setupKeySelector (juce::ComboBox& box)
 {
-    b.setColour (juce::TextButton::buttonColourId, col);
-    b.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
-    addAndMakeVisible (b);
+    const char* keys[] = { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" };
+    for (int i = 0; i < 12; ++i)
+        box.addItem (keys[i], i + 1);
+
+    box.setColour (juce::ComboBox::backgroundColourId, juce::Colour (0xffe8e6df));
+    box.setColour (juce::ComboBox::textColourId, juce::Colour (0xff1f2124));
+    box.setColour (juce::ComboBox::outlineColourId, juce::Colour (0xffb8b4a8));
+    addAndMakeVisible (box);
 }
 
 EXAudioProcessorEditor::EXAudioProcessorEditor (EXAudioProcessor& p)
     : AudioProcessorEditor (&p), audioProcessor (p)
 {
-    headerLabel.setText ("EX // SMART WORKSTATION", juce::dontSendNotification);
-    headerLabel.setFont (juce::Font (17.0f, juce::Font::bold));
-    headerLabel.setColour (juce::Label::textColourId, juce::Colours::white);
-    addAndMakeVisible (headerLabel);
+    brandTitle.setText ("SYNTH SHAPER // EX", juce::dontSendNotification);
+    brandTitle.setFont (juce::Font (18.0f, juce::Font::bold));
+    brandTitle.setColour (juce::Label::textColourId, juce::Colour (0xff26282e));
+    addAndMakeVisible (brandTitle);
 
-    infoBadgeLabel.setText ("KEY: -- | BPM: --", juce::dontSendNotification);
-    infoBadgeLabel.setFont (juce::Font (12.0f, juce::Font::bold));
-    infoBadgeLabel.setJustificationType (juce::Justification::centredRight);
-    infoBadgeLabel.setColour (juce::Label::textColourId, juce::Colour (0xff00f5d4));
-    addAndMakeVisible (infoBadgeLabel);
+    subTitle.setText ("HARMONIC GENERATIVE SAMPLE FLIPPER", juce::dontSendNotification);
+    subTitle.setFont (juce::Font (10.0f, juce::Font::plain));
+    subTitle.setColour (juce::Label::textColourId, juce::Colour (0xff7a7c85));
+    addAndMakeVisible (subTitle);
 
-    // Transport & Smart Features
-    styleButton (playPauseBtn, juce::Colour (0xff242732));
-    styleButton (diceBtn, juce::Colour (0xff242732));
-    styleButton (dragMidiBtn, juce::Colour (0xff2d3142));
+    // Source Controls
+    sourceSectionTitle.setText ("INPUT SAMPLE", juce::dontSendNotification);
+    sourceSectionTitle.setFont (juce::Font (11.0f, juce::Font::bold));
+    sourceSectionTitle.setColour (juce::Label::textColourId, juce::Colour (0xff9e3333));
+    addAndMakeVisible (sourceSectionTitle);
 
-    playPauseBtn.setButtonText (juce::CharPointer_UTF8 ("\xe2\x96\xb6 PLAY"));
-    diceBtn.setButtonText (juce::CharPointer_UTF8 ("\xf0\x9f\x8e\xb2 DICE"));
-    dragMidiBtn.setButtonText ("DRAG MIDI");
-
-    playPauseBtn.onClick = [this]() {
-        audioProcessor.togglePlayPause();
-        playPauseBtn.setButtonText (audioProcessor.getIsAuditioning() 
-            ? juce::CharPointer_UTF8 ("\xe2\x8f\xb8 PAUSE") 
-            : juce::CharPointer_UTF8 ("\xe2\x96\xb6 PLAY"));
+    setupKeySelector (sourceKeySelector);
+    sourceKeySelector.setSelectedId (audioProcessor.sourceKeyIdx + 1, juce::dontSendNotification);
+    sourceKeySelector.onChange = [this]() {
+        audioProcessor.sourceKeyIdx = sourceKeySelector.getSelectedId() - 1;
     };
 
-    diceBtn.onClick = [this]() {
-        audioProcessor.generateRandomMelodySequence();
+    sourceBpmSlider.setRange (60, 200, 1);
+    sourceBpmSlider.setValue (audioProcessor.sourceBpm, juce::dontSendNotification);
+    sourceBpmSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false, 45, 20);
+    sourceBpmSlider.setColour (juce::Slider::textBoxTextColourId, juce::Colour (0xff2b2b2b));
+    sourceBpmSlider.onValueChange = [this]() {
+        audioProcessor.sourceBpm = (int) sourceBpmSlider.getValue();
+    };
+    addAndMakeVisible (sourceBpmSlider);
+
+    // Target Controls
+    targetSectionTitle.setText ("PROJECT TARGET", juce::dontSendNotification);
+    targetSectionTitle.setFont (juce::Font (11.0f, juce::Font::bold));
+    targetSectionTitle.setColour (juce::Label::textColourId, juce::Colour (0xff206b3e));
+    addAndMakeVisible (targetSectionTitle);
+
+    setupKeySelector (targetKeySelector);
+    targetKeySelector.setSelectedId (audioProcessor.targetKeyIdx + 1, juce::dontSendNotification);
+    targetKeySelector.onChange = [this]() {
+        audioProcessor.targetKeyIdx = targetKeySelector.getSelectedId() - 1;
+    };
+
+    targetBpmSlider.setRange (60, 200, 1);
+    targetBpmSlider.setValue (audioProcessor.targetBpm, juce::dontSendNotification);
+    targetBpmSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false, 45, 20);
+    targetBpmSlider.setColour (juce::Slider::textBoxTextColourId, juce::Colour (0xff2b2b2b));
+    targetBpmSlider.onValueChange = [this]() {
+        audioProcessor.targetBpm = (int) targetBpmSlider.getValue();
+    };
+    addAndMakeVisible (targetBpmSlider);
+
+    // Center Big Interactive 3D Dice Button
+    diceButton.setButtonText (juce::CharPointer_UTF8 ("\xf0\x9f\x8e\xb2 FLIP DICE"));
+    diceButton.setColour (juce::TextButton::buttonColourId, juce::Colour (0xffa62424));
+    diceButton.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
+    diceButton.onClick = [this]() {
+        audioProcessor.rollDiceAndGenerateMelody();
         repaint();
     };
+    addAndMakeVisible (diceButton);
 
-    dragMidiBtn.onClick = [this]() {
-        auto midiFile = audioProcessor.exportCurrentSequenceAsMidi();
-        if (midiFile.existsAsFile())
+    playPauseButton.setButtonText (juce::CharPointer_UTF8 ("\xe2\x96\xb6 PLAY"));
+    playPauseButton.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff32353b));
+    playPauseButton.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
+    playPauseButton.onClick = [this]() {
+        audioProcessor.toggleAudition();
+        playPauseButton.setButtonText (audioProcessor.isAuditionPlaying()
+            ? juce::CharPointer_UTF8 ("\xe2\x8f\xb8 PAUSE")
+            : juce::CharPointer_UTF8 ("\xe2\x96\xb6 PLAY"));
+    };
+    addAndMakeVisible (playPauseButton);
+
+    dragMidiButton.setButtonText ("DRAG MIDI");
+    dragMidiButton.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff244b70));
+    dragMidiButton.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
+    dragMidiButton.onClick = [this]() {
+        auto mf = audioProcessor.exportCurrentSequenceAsMidi();
+        if (mf.existsAsFile())
         {
             juce::StringArray files;
-            files.add (midiFile.getFullPathName());
+            files.add (mf.getFullPathName());
             performExternalDragDropOfFiles (files, false);
         }
     };
+    addAndMakeVisible (dragMidiButton);
 
-    // Chops Buttons
-    styleButton (chop1_4Btn, juce::Colour (0xff1f2128));
-    styleButton (chop1_8Btn, juce::Colour (0xff1f2128));
-    styleButton (chop1_16Btn, juce::Colour (0xff1f2128));
-    styleButton (chopTransientBtn, juce::Colour (0xff1f2128));
-    styleButton (stemSplitBtn, juce::Colour (0xffff2a42));
+    // FX Knobs
+    setupVintageKnob (delayTimeKnob, delayTimeLabel, "TIME");
+    setupVintageKnob (delayMixKnob, delayMixLabel, "DLY MIX");
+    setupVintageKnob (reverbSizeKnob, rvbSizeLabel, "SPACE");
+    setupVintageKnob (reverbMixKnob, rvbMixLabel, "RVB MIX");
+    setupVintageKnob (tapeDriveKnob, tapeLabel, "TAPE DRIVE");
+    setupVintageKnob (filterCutoffKnob, filterLabel, "FILTER");
+    setupVintageKnob (masterOutKnob, masterLabel, "MASTER");
 
-    chop1_4Btn.setButtonText ("1/4");
-    chop1_8Btn.setButtonText ("1/8");
-    chop1_16Btn.setButtonText ("1/16");
-    chopTransientBtn.setButtonText ("TRANSIENT");
-    stemSplitBtn.setButtonText ("AI 4-WAY SPLIT");
+    delayTimeAtt = std::make_unique<Attachment> (audioProcessor.apvts, "DELAY_TIME", delayTimeKnob);
+    delayMixAtt  = std::make_unique<Attachment> (audioProcessor.apvts, "DELAY_MIX",  delayMixKnob);
+    rvbSizeAtt   = std::make_unique<Attachment> (audioProcessor.apvts, "REVERB_SIZE", reverbSizeKnob);
+    rvbMixAtt    = std::make_unique<Attachment> (audioProcessor.apvts, "REVERB_MIX",  reverbMixKnob);
+    tapeAtt      = std::make_unique<Attachment> (audioProcessor.apvts, "TAPE_DRIVE",  tapeDriveKnob);
+    filterAtt    = std::make_unique<Attachment> (audioProcessor.apvts, "FILTER_CUTOFF", filterCutoffKnob);
+    masterAtt    = std::make_unique<Attachment> (audioProcessor.apvts, "MASTER_OUT", masterOutKnob);
 
-    chop1_4Btn.onClick = [this]() { audioProcessor.sliceAudio (4); repaint(); };
-    chop1_8Btn.onClick = [this]() { audioProcessor.sliceAudio (8); repaint(); };
-    chop1_16Btn.onClick = [this]() { audioProcessor.sliceAudio (16); repaint(); };
-    chopTransientBtn.onClick = [this]() { audioProcessor.detectTransientsAndSlice(); repaint(); };
-    stemSplitBtn.onClick = [this]() { audioProcessor.triggerStemSeparation(); repaint(); };
-
-    // Stem tabs
-    styleButton (masterTab, juce::Colour (0xff2b2e38));
-    styleButton (vocalTab, juce::Colour (0xff1c1e24));
-    styleButton (drumTab, juce::Colour (0xff1c1e24));
-    styleButton (bassTab, juce::Colour (0xff1c1e24));
-    styleButton (otherTab, juce::Colour (0xff1c1e24));
-
-    masterTab.setButtonText ("MASTER");
-    vocalTab.setButtonText ("VOCALS");
-    drumTab.setButtonText ("DRUMS");
-    bassTab.setButtonText ("BASS");
-    otherTab.setButtonText ("OTHER");
-
-    masterTab.onClick = [this]() { audioProcessor.selectStem (StemType::Master); repaint(); };
-    vocalTab.onClick  = [this]() { audioProcessor.selectStem (StemType::Vocals); repaint(); };
-    drumTab.onClick   = [this]() { audioProcessor.selectStem (StemType::Drums); repaint(); };
-    bassTab.onClick   = [this]() { audioProcessor.selectStem (StemType::Bass); repaint(); };
-    otherTab.onClick  = [this]() { audioProcessor.selectStem (StemType::Other); repaint(); };
-
-    // Knobs
-    styleKnob (driveKnob, driveLabel, "DRIVE");
-    styleKnob (crushKnob, crushLabel, "BIT CRUSH");
-    styleKnob (spaceKnob, spaceLabel, "SPACE");
-    styleKnob (filterKnob, filterLabel, "LP FILTER", "Hz");
-    styleKnob (pitchKnob, pitchLabel, "PITCH", "st");
-    styleKnob (gainKnob, gainLabel, "OUT GAIN");
-
-    driveAtt  = std::make_unique<Attachment> (audioProcessor.apvts, "DRIVE",  driveKnob);
-    crushAtt  = std::make_unique<Attachment> (audioProcessor.apvts, "CRUSH",  crushKnob);
-    spaceAtt  = std::make_unique<Attachment> (audioProcessor.apvts, "SPACE",  spaceKnob);
-    filterAtt = std::make_unique<Attachment> (audioProcessor.apvts, "FILTER", filterKnob);
-    pitchAtt  = std::make_unique<Attachment> (audioProcessor.apvts, "PITCH",  pitchKnob);
-    gainAtt   = std::make_unique<Attachment> (audioProcessor.apvts, "GAIN",   gainKnob);
-
-    setSize (780, 520);
+    setSize (840, 560);
     startTimerHz (30);
 }
 
@@ -136,9 +149,10 @@ EXAudioProcessorEditor::~EXAudioProcessorEditor()
 
 void EXAudioProcessorEditor::timerCallback()
 {
-    infoBadgeLabel.setText ("KEY: " + audioProcessor.detectedKey + " | BPM: " + juce::String (audioProcessor.detectedBpm), juce::dontSendNotification);
+    sourceKeySelector.setSelectedId (audioProcessor.sourceKeyIdx + 1, juce::dontSendNotification);
+    sourceBpmSlider.setValue (audioProcessor.sourceBpm, juce::dontSendNotification);
 
-    if (audioProcessor.isSeparating.load() || audioProcessor.getIsAuditioning())
+    if (audioProcessor.isAuditionPlaying())
         repaint();
 }
 
@@ -158,146 +172,125 @@ void EXAudioProcessorEditor::filesDropped (const juce::StringArray& files, int, 
     }
 }
 
-void EXAudioProcessorEditor::mouseDown (const juce::MouseEvent& e)
-{
-    auto& buffer = audioProcessor.getAudioBuffer();
-    if (buffer.getNumSamples() == 0 || !waveArea.contains (e.getPosition()))
-        return;
-
-    int clickX = e.x - waveArea.getX();
-    float samplePerPixel = (float) buffer.getNumSamples() / (float) waveArea.getWidth();
-
-    draggedSliceIndex = -1;
-    for (size_t i = 0; i < audioProcessor.getSlicePoints().size(); ++i)
-    {
-        int sliceSample = audioProcessor.getSlicePoints()[i];
-        int slicePx = (int) (sliceSample / samplePerPixel);
-        if (std::abs (clickX - slicePx) < 8)
-        {
-            draggedSliceIndex = (int) i;
-            break;
-        }
-    }
-}
-
-void EXAudioProcessorEditor::mouseDrag (const juce::MouseEvent& e)
-{
-    auto& buffer = audioProcessor.getAudioBuffer();
-    if (draggedSliceIndex >= 0 && buffer.getNumSamples() > 0)
-    {
-        int curX = juce::jlimit (waveArea.getX(), waveArea.getRight(), e.x) - waveArea.getX();
-        float samplePerPixel = (float) buffer.getNumSamples() / (float) waveArea.getWidth();
-        int newPos = (int) (curX * samplePerPixel);
-        audioProcessor.setSlicePosition (draggedSliceIndex, newPos);
-        repaint();
-    }
-}
-
-void EXAudioProcessorEditor::mouseUp (const juce::MouseEvent&)
-{
-    draggedSliceIndex = -1;
-}
-
 void EXAudioProcessorEditor::paint (juce::Graphics& g)
 {
-    g.fillAll (juce::Colour (0xff0e0f12));
+    // 1. Vintage Wooden Side Cheeks (Reference Image)
+    g.fillAll (juce::Colour (0xff57331d)); // Dark walnut wood
 
-    // Header Bar
-    g.setColour (juce::Colour (0xff14161c));
-    g.fillRect (0, 0, getWidth(), 48);
-    g.setColour (juce::Colour (0xff22252f));
-    g.drawHorizontalLine (48, 0.0f, (float) getWidth());
+    // 2. Off-White / Cream Console Body Plate
+    auto body = getLocalBounds().reduced (14, 10).toFloat();
+    g.setColour (juce::Colour (0xffeae7de));
+    g.fillRoundedRectangle (body, 6.0f);
 
-    // Waveform Container
-    waveArea = juce::Rectangle<int> (20, 92, getWidth() - 40, 180);
-    g.setColour (juce::Colour (0xff13141a));
-    g.fillRoundedRectangle (waveArea.toFloat(), 6.0f);
-    g.setColour (juce::Colour (0xff232630));
-    g.drawRoundedRectangle (waveArea.toFloat(), 6.0f, 1.2f);
+    g.setColour (juce::Colour (0xffcfcac0));
+    g.drawRoundedRectangle (body, 6.0f, 2.0f);
 
+    // Decorative Screws in 4 Corners
+    g.setColour (juce::Colour (0xff9e9a91));
+    g.fillEllipse (20, 16, 7, 7);
+    g.fillEllipse (getWidth() - 27, 16, 7, 7);
+    g.fillEllipse (20, getHeight() - 23, 7, 7);
+    g.fillEllipse (getWidth() - 27, getHeight() - 23, 7, 7);
+
+    // Top Header Plate
+    g.setColour (juce::Colour (0xffded9cd));
+    g.drawHorizontalLine (56, body.getX(), body.getRight());
+
+    // 3. Center Circular Oscilloscope / Radar (Exact Reference)
+    float centerX = getWidth() * 0.5f;
+    float centerY = 190.0f;
+    float radius = 80.0f;
+
+    // Outer Bezel
+    g.setColour (juce::Colour (0xffb5b0a3));
+    g.drawEllipse (centerX - radius - 4, centerY - radius - 4, (radius + 4) * 2, (radius + 4) * 2, 3.0f);
+
+    // Dark Red Radar Glass
+    g.setColour (juce::Colour (0xff400d0d));
+    g.fillEllipse (centerX - radius, centerY - radius, radius * 2, radius * 2);
+
+    // Radar Grid Lines
+    g.setColour (juce::Colour (0x33b83232));
+    for (int r = 20; r < 80; r += 20)
+        g.drawEllipse (centerX - r, centerY - r, r * 2, r * 2, 1.0f);
+    g.drawLine (centerX - radius, centerY, centerX + radius, centerY, 1.0f);
+    g.drawLine (centerX, centerY - radius, centerX, centerY + radius, 1.0f);
+
+    // Neon Red/Orange Oscilloscope Waveform inside radar
     auto& buf = audioProcessor.getAudioBuffer();
     if (buf.getNumSamples() > 0)
     {
-        g.setColour (juce::Colour (0xff00f5d4));
-        auto numSamples = buf.getNumSamples();
-        auto w = waveArea.getWidth();
-        auto midY = waveArea.getCentreY();
-        auto maxH = waveArea.getHeight() / 2 - 12;
-
-        for (int x = 0; x < w; ++x)
+        g.setColour (juce::Colour (0xffff3b30));
+        int numSamples = buf.getNumSamples();
+        for (int x = -60; x < 60; ++x)
         {
-            int idx = (int) ((x / (float) w) * numSamples);
+            int idx = (int) (((x + 60) / 120.0f) * numSamples);
             float val = buf.getSample (0, idx);
-            g.drawLine ((float) waveArea.getX() + x, midY - (val * maxH),
-                        (float) waveArea.getX() + x, midY + (val * maxH), 1.0f);
-        }
-
-        // Draggable Slice Markers
-        for (size_t i = 0; i < audioProcessor.getSlicePoints().size(); ++i)
-        {
-            int slicePos = audioProcessor.getSlicePoints()[i];
-            float lineX = waveArea.getX() + ((slicePos / (float) numSamples) * w);
-            g.setColour (juce::Colour (0xffff2a42));
-            g.drawLine (lineX, (float) waveArea.getY(), lineX, (float) waveArea.getBottom(), 2.0f);
-
-            g.setColour (juce::Colours::white);
-            g.fillRect (lineX - 3.0f, (float) waveArea.getY(), 6.0f, 12.0f);
+            g.drawLine (centerX + x, centerY - (val * 45.0f), centerX + x, centerY + (val * 45.0f), 1.2f);
         }
     }
     else
     {
-        g.setColour (juce::Colour (0xff5a5f70));
-        g.setFont (14.0f);
-        g.drawText ("DROP SAMPLE HERE // MP3 / WAV", waveArea, juce::Justification::centred);
+        g.setColour (juce::Colour (0xffa65353));
+        g.setFont (12.0f);
+        g.drawText ("DROP SAMPLE", centerX - 50, centerY - 25, 100, 20, juce::Justification::centred);
     }
 
-    // Lower Rack
-    auto rackBounds = juce::Rectangle<int> (20, 330, getWidth() - 40, 170);
-    g.setColour (juce::Colour (0xff14151b));
-    g.fillRoundedRectangle (rackBounds.toFloat(), 6.0f);
-    g.setColour (juce::Colour (0xff20232c));
-    g.drawRoundedRectangle (rackBounds.toFloat(), 6.0f, 1.0f);
+    // 4. Panel Insets for Left & Right FX Units
+    g.setColour (juce::Colour (0xffe2dfd4));
+    auto leftBox = juce::Rectangle<float> (30, 75, 230, 240);
+    auto rightBox = juce::Rectangle<float> (getWidth() - 260, 75, 230, 240);
+    g.fillRoundedRectangle (leftBox, 4.0f);
+    g.fillRoundedRectangle (rightBox, 4.0f);
+    g.setColour (juce::Colour (0xffcfcac0));
+    g.drawRoundedRectangle (leftBox, 4.0f, 1.0f);
+    g.drawRoundedRectangle (rightBox, 4.0f, 1.0f);
+
+    // 5. Lower Sample & Scale Control Bar
+    auto lowerBar = juce::Rectangle<float> (30, 330, getWidth() - 60, 205);
+    g.setColour (juce::Colour (0xffdfdbcf));
+    g.fillRoundedRectangle (lowerBar, 4.0f);
+    g.setColour (juce::Colour (0xffc4beb2));
+    g.drawRoundedRectangle (lowerBar, 4.0f, 1.0f);
 }
 
 void EXAudioProcessorEditor::resized()
 {
-    headerLabel.setBounds (20, 10, 280, 28);
-    infoBadgeLabel.setBounds (getWidth() - 250, 14, 230, 20);
+    brandTitle.setBounds (30, 14, 250, 22);
+    subTitle.setBounds (30, 36, 250, 16);
 
-    // Stem View Tabs (Left)
-    int tabW = 68;
-    int tabH = 26;
-    int tabY = 58;
-    masterTab.setBounds (20, tabY, tabW, tabH);
-    vocalTab.setBounds (92, tabY, tabW, tabH);
-    drumTab.setBounds (164, tabY, tabW, tabH);
-    bassTab.setBounds (236, tabY, tabW, tabH);
-    otherTab.setBounds (308, tabY, tabW, tabH);
+    // Left FX Unit (Delay & Space)
+    delayTimeKnob.setBounds (45, 95, 65, 75);
+    delayTimeLabel.setBounds (45, 172, 65, 16);
+    delayMixKnob.setBounds (125, 95, 65, 75);
+    delayMixLabel.setBounds (125, 172, 65, 16);
 
-    // Transport & Generative Controls (Middle)
-    playPauseBtn.setBounds (390, tabY, 65, tabH);
-    diceBtn.setBounds (460, tabY, 58, tabH);
-    dragMidiBtn.setBounds (523, tabY, 78, tabH);
+    reverbSizeKnob.setBounds (45, 205, 65, 75);
+    rvbSizeLabel.setBounds (45, 282, 65, 16);
+    reverbMixKnob.setBounds (125, 205, 65, 75);
+    rvbMixLabel.setBounds (125, 282, 65, 16);
 
-    // Chops Buttons right aligned
-    chop1_4Btn.setBounds (getWidth() - 175, tabY, 32, tabH);
-    chop1_8Btn.setBounds (getWidth() - 140, tabY, 32, tabH);
-    chop1_16Btn.setBounds (getWidth() - 105, tabY, 38, tabH);
-    stemSplitBtn.setBounds (getWidth() - 65, tabY, 45, tabH);
+    // Right FX Unit (Tape, Filter, Master)
+    tapeDriveKnob.setBounds (getWidth() - 245, 95, 65, 75);
+    tapeLabel.setBounds (getWidth() - 245, 172, 65, 16);
+    filterCutoffKnob.setBounds (getWidth() - 165, 95, 65, 75);
+    filterLabel.setBounds (getWidth() - 165, 172, 65, 16);
 
-    // 6-Knob Rack Layout
-    int startY = 345;
-    int spacing = 122;
-    int knobW = 82;
-    int knobH = 82;
-    int startX = (getWidth() - (spacing * 6)) / 2 + 20;
+    masterOutKnob.setBounds (getWidth() - 205, 205, 65, 75);
+    masterLabel.setBounds (getWidth() - 205, 282, 65, 16);
 
-    juce::Slider* knobs[] = { &driveKnob, &crushKnob, &spaceKnob, &filterKnob, &pitchKnob, &gainKnob };
-    juce::Label* labels[] = { &driveLabel, &crushLabel, &spaceLabel, &filterLabel, &pitchLabel, &gainLabel };
+    // Center Controls (Below Radar)
+    int cX = getWidth() / 2;
+    diceButton.setBounds (cX - 65, 200, 130, 34);
+    playPauseButton.setBounds (cX - 80, 285, 75, 28);
+    dragMidiButton.setBounds (cX + 5, 285, 75, 28);
 
-    for (int i = 0; i < 6; ++i)
-    {
-        knobs[i]->setBounds (startX + (i * spacing), startY, knobW, knobH);
-        labels[i]->setBounds (startX + (i * spacing), startY + knobH + 4, knobW, 16);
-    }
+    // Lower Controls: Input Sample vs Target Project
+    sourceSectionTitle.setBounds (50, 345, 150, 18);
+    sourceKeySelector.setBounds (50, 370, 70, 24);
+    sourceBpmSlider.setBounds (130, 370, 110, 24);
+
+    targetSectionTitle.setBounds (getWidth() - 240, 345, 150, 18);
+    targetKeySelector.setBounds (getWidth() - 240, 370, 70, 24);
+    targetBpmSlider.setBounds (getWidth() - 160, 370, 110, 24);
 }
