@@ -3,11 +3,12 @@
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_dsp/juce_dsp.h>
 
-struct MelodyStep
+struct FlipStep
 {
-    int sliceIndex = 0;
-    int pitchShiftSemis = 0; // Relative scale transposition
+    int sliceIdx = 0;
+    int pitchOffset = 0;
     float velocity = 1.0f;
+    bool isReverse = false;
     bool isGate = true;
 };
 
@@ -41,52 +42,51 @@ public:
     void setStateInformation (const void* data, int sizeInBytes) override;
 
     void loadAudioFile (const juce::File& file);
-    void sliceAudioTransient();
-    void rollDiceAndGenerateMelody();
-    juce::File exportCurrentSequenceAsMidi();
+    void sliceTransientDetection();
+    void rollDiceAndFlipPattern();
+    juce::File generateMidiFile();
 
-    void toggleAudition();
-    bool isAuditionPlaying() const { return isAudition.load(); }
+    void togglePlayback();
+    bool isPlayingActive() const { return isPlayingPattern.load(); }
 
-    juce::AudioSampleBuffer& getAudioBuffer() { return loadedBuffer; }
-    const std::vector<int>& getSlicePoints() const { return slicePoints; }
+    juce::AudioSampleBuffer& getAudioBuffer() { return sampleBuffer; }
+    const std::vector<int>& getSlicePoints() const { return sliceMarkers; }
 
-    // Source vs Target Parameters
     int sourceBpm = 130;
-    int sourceKeyIdx = 0;
+    int sourceKey = 0;
     int targetBpm = 140;
-    int targetKeyIdx = 0; // 0: C, 1: C#, 2: D...
-    int targetScaleMode = 0; // 0: Minor, 1: Major
+    int targetKey = 0;
+    bool halfTimeMode = false;
 
     juce::AudioProcessorValueTreeState apvts;
     juce::AudioFormatManager formatManager;
 
 private:
     juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
-    void detectBpmAndRootKey();
+    void analyzeAudioProperties();
 
-    juce::AudioSampleBuffer loadedBuffer;
-    std::vector<int> slicePoints;
-    std::vector<MelodyStep> melodyPattern;
+    juce::AudioSampleBuffer sampleBuffer;
+    std::vector<int> sliceMarkers;
+    std::vector<FlipStep> patternSteps;
 
-    // Playback Engine
-    std::atomic<bool> isAudition { false };
-    int currentStep = 0;
-    int samplesPerStep = 11025; // 1/16 note default
-    int stepSampleCounter = 0;
-    double activeSliceReadPos = 0.0;
-    int activeSliceEnd = 0;
-    double currentPitchFactor = 1.0;
-    bool isSliceSounding = false;
+    std::atomic<bool> isPlayingPattern { false };
+    int currentStepIndex = 0;
+    int samplesPerStep = 11025;
+    int stepClock = 0;
 
-    // DSP Rack
+    double playheadPosition = 0.0;
+    int playheadEnd = 0;
+    double pitchSpeed = 1.0;
+    bool isVoiceActive = false;
+    bool currentStepReverse = false;
+
+    // DSP Processors
     juce::dsp::Reverb reverb;
     juce::dsp::Reverb::Parameters reverbParams;
     juce::dsp::StateVariableTPTFilter<float> filter;
 
-    // Delay line buffer
     juce::AudioBuffer<float> delayBuffer;
-    int delayWritePos = 0;
+    int delayWriteIndex = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (EXAudioProcessor)
 };
