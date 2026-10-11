@@ -11,6 +11,18 @@ public:
                            float rotaryEndAngle, juce::Slider& slider) override;
 };
 
+struct LayerUIComponent
+{
+    juce::Label titleLabel;
+    juce::ComboBox keySelector;
+    juce::ComboBox modeSelector;
+    juce::Slider bpmSlider;
+    juce::Slider volSlider;
+    juce::TextButton muteBtn;
+    juce::TextButton clearBtn;
+    juce::Rectangle<float> waveArea;
+};
+
 class EXAudioProcessorEditor : public juce::AudioProcessorEditor,
                                public juce::FileDragAndDropTarget,
                                public juce::Timer
@@ -37,18 +49,16 @@ private:
     juce::Label brandTitle;
     juce::Label subTitle;
 
-    // Controls
-    juce::Label sourceTitle;
-    juce::ComboBox sourceKeySelector;
-    juce::ComboBox sourceModeSelector;
-    juce::Slider sourceBpmSlider;
+    // 3 Dynamic Layers
+    LayerUIComponent layerUIs[3];
 
-    juce::Label targetTitle;
-    juce::ComboBox targetKeySelector;
-    juce::ComboBox targetModeSelector;
-    juce::Slider targetBpmSlider;
+    // Master Project Target Controls
+    juce::Label masterTargetTitle;
+    juce::ComboBox masterKeySelector;
+    juce::ComboBox masterModeSelector;
+    juce::Slider masterBpmSlider;
 
-    // Slicing Grid Buttons
+    // Grid Slicing Selectors
     juce::TextButton btnQuarter;
     juce::TextButton btnEighth;
     juce::TextButton btnSixteenth;
@@ -57,13 +67,13 @@ private:
     juce::TextButton btnTransient;
 
     // Center Controls & Exporters
-    juce::TextButton diceButton;
+    juce::TextButton diceHitboxButton;
     juce::TextButton playPauseButton;
     juce::TextButton dragMidiButton;
     juce::TextButton dragAudioButton;
     juce::ToggleButton halfTimeToggle;
 
-    // Knobs
+    // Hardware Knobs
     juce::Slider tapeDriveKnob;
     juce::Slider delayTimeKnob;
     juce::Slider delayMixKnob;
@@ -78,13 +88,13 @@ private:
     std::unique_ptr<Attachment> tapeAtt, delayTimeAtt, delayMixAtt, rvbSizeAtt, rvbMixAtt, filterAtt, masterAtt;
 
     float radarAngle = 0.0f;
+    int draggingLayerIdx = -1;
     int draggingMarkerIdx = -1;
-    juce::Rectangle<float> waveformArea;
 
     void setupHardwareKnob (juce::Slider& s, juce::Label& l, const juce::String& name);
     void setupKeySelector (juce::ComboBox& box);
     void setupModeSelector (juce::ComboBox& box);
-    void draw3DDice (juce::Graphics& g, float cx, float cy, float size);
+    void drawRealistic3DCubeDice (juce::Graphics& g, float cx, float cy, float size);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (EXAudioProcessorEditor)
 };
