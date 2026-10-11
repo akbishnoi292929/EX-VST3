@@ -10,11 +10,11 @@ void VintageHardwareKnobLookAndFeel::drawRotarySlider (juce::Graphics& g, int x,
     auto centreY = (float) y + (float) height * 0.5f;
     auto angle = rotaryStartAngle + sliderPos * (rotaryEndAngle - rotaryStartAngle);
 
-    // 1. Ribbed Outer Base Ring (Bakelite Black)
+    // Ribbed Outer Base Ring (Bakelite Black)
     g.setColour (juce::Colour (0xff1f2126));
     g.fillEllipse (centreX - radius, centreY - radius, radius * 2.0f, radius * 2.0f);
 
-    // 2. Inner Red Cap (Vintage Reference)
+    // Inner Red Cap
     float capR = radius * 0.72f;
     g.setColour (juce::Colour (0xffb82222));
     g.fillEllipse (centreX - capR, centreY - capR, capR * 2.0f, capR * 2.0f);
@@ -23,7 +23,7 @@ void VintageHardwareKnobLookAndFeel::drawRotarySlider (juce::Graphics& g, int x,
     g.setColour (juce::Colour (0x44ffffff));
     g.drawEllipse (centreX - capR, centreY - capR, capR * 2.0f, capR * 2.0f, 1.2f);
 
-    // 3. Crisp White Indicator Pointer Line
+    // White Pointer
     juce::Path p;
     auto pointerLen = capR * 0.85f;
     p.addRectangle (-1.5f, -pointerLen, 3.0f, pointerLen);
@@ -63,17 +63,18 @@ void EXAudioProcessorEditor::setupKeySelector (juce::ComboBox& box)
 EXAudioProcessorEditor::EXAudioProcessorEditor (EXAudioProcessor& p)
     : AudioProcessorEditor (&p), audioProcessor (p)
 {
-    brandTitle.setText ("SYNTH SHAPER // EX", juce::dontSendNotification);
-    brandTitle.setFont (juce::Font (18.0f, juce::Font::bold));
-    brandTitle.setColour (juce::Label::textColourId, juce::Colour (0xff26282e));
+    // Real Branding
+    brandTitle.setText ("EX", juce::dontSendNotification);
+    brandTitle.setFont (juce::Font (26.0f, juce::Font::bold));
+    brandTitle.setColour (juce::Label::textColourId, juce::Colour (0xff9e1e1e)); // Deep Crimson Red
     addAndMakeVisible (brandTitle);
 
-    subTitle.setText ("HARMONIC GENERATIVE SAMPLE FLIPPER", juce::dontSendNotification);
-    subTitle.setFont (juce::Font (10.0f, juce::Font::plain));
-    subTitle.setColour (juce::Label::textColourId, juce::Colour (0xff7a7c85));
+    subTitle.setText ("HEARTLESS SAMPLE FLIPPER // JO SABKA KAAT TI HAI, AB SAMPLE KAATEGI", juce::dontSendNotification);
+    subTitle.setFont (juce::Font (10.5f, juce::Font::bold));
+    subTitle.setColour (juce::Label::textColourId, juce::Colour (0xff63666f));
     addAndMakeVisible (subTitle);
 
-    // Source
+    // Source Sample Section
     sourceTitle.setText ("SOURCE SAMPLE", juce::dontSendNotification);
     sourceTitle.setFont (juce::Font (11.0f, juce::Font::bold));
     sourceTitle.setColour (juce::Label::textColourId, juce::Colour (0xff9e3333));
@@ -94,7 +95,7 @@ EXAudioProcessorEditor::EXAudioProcessorEditor (EXAudioProcessor& p)
     };
     addAndMakeVisible (sourceBpmSlider);
 
-    // Target
+    // Target Project Section
     targetTitle.setText ("TARGET PROJECT", juce::dontSendNotification);
     targetTitle.setFont (juce::Font (11.0f, juce::Font::bold));
     targetTitle.setColour (juce::Label::textColourId, juce::Colour (0xff206b3e));
@@ -115,7 +116,7 @@ EXAudioProcessorEditor::EXAudioProcessorEditor (EXAudioProcessor& p)
     };
     addAndMakeVisible (targetBpmSlider);
 
-    // Center Buttons
+    // Center Controls
     diceButton.setButtonText (juce::CharPointer_UTF8 ("\xf0\x9f\x8e\xb2 FLIP DICE"));
     diceButton.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff9e1e1e));
     diceButton.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
@@ -157,7 +158,7 @@ EXAudioProcessorEditor::EXAudioProcessorEditor (EXAudioProcessor& p)
     };
     addAndMakeVisible (halfTimeToggle);
 
-    // Knobs
+    // Hardware Knobs
     setupHardwareKnob (delayTimeKnob, delayTimeLabel, "TIME");
     setupHardwareKnob (delayMixKnob, delayMixLabel, "DLY MIX");
     setupHardwareKnob (reverbSizeKnob, rvbSizeLabel, "SPACE");
@@ -284,18 +285,53 @@ void EXAudioProcessorEditor::paint (juce::Graphics& g)
     g.drawRoundedRectangle (leftBox, 4.0f, 1.0f);
     g.drawRoundedRectangle (rightBox, 4.0f, 1.0f);
 
-    // Lower Plate
+    // Lower Plate: Slices Display Bed (Kaatne Ka Maidan)
     auto lowerBar = juce::Rectangle<float> (30.0f, 335.0f, static_cast<float> (getWidth() - 60), 200.0f);
-    g.setColour (juce::Colour (0xffe2dfd5));
+    g.setColour (juce::Colour (0xffdfdbcf));
     g.fillRoundedRectangle (lowerBar, 4.0f);
     g.setColour (juce::Colour (0xffc4beb2));
     g.drawRoundedRectangle (lowerBar, 4.0f, 1.0f);
+
+    // Waveform Strip showing chopped pieces
+    auto stripArea = juce::Rectangle<float> (40.0f, 415.0f, static_cast<float> (getWidth() - 80), 105.0f);
+    g.setColour (juce::Colour (0xff212328)); // Dark tape bed
+    g.fillRoundedRectangle (stripArea, 4.0f);
+
+    if (buf.getNumSamples() > 0)
+    {
+        g.setColour (juce::Colour (0xffe63946)); // Red wave
+        int total = buf.getNumSamples();
+        float w = stripArea.getWidth();
+        float mid = stripArea.getCentreY();
+
+        for (int x = 0; x < (int) w; ++x)
+        {
+            int sIdx = static_cast<int> ((x / w) * total);
+            sIdx = juce::jlimit (0, total - 1, sIdx);
+            float v = buf.getSample (0, sIdx);
+            g.drawLine (stripArea.getX() + x, mid - (v * 40.0f), stripArea.getX() + x, mid + (v * 40.0f), 1.0f);
+        }
+
+        // Chop cut marks (Kahan kahan se kata hai)
+        g.setColour (juce::Colours::white);
+        for (int slice : audioProcessor.getSlicePoints())
+        {
+            float cutX = stripArea.getX() + ((slice / (float) total) * w);
+            g.drawVerticalLine ((int) cutX, stripArea.getY(), stripArea.getBottom());
+        }
+    }
+    else
+    {
+        g.setColour (juce::Colour (0xff707584));
+        g.setFont (12.0f);
+        g.drawText ("DROP SAMPLE TO SLICE // YAHAN TUKDE KATEGA", stripArea.toNearestInt(), juce::Justification::centred);
+    }
 }
 
 void EXAudioProcessorEditor::resized()
 {
-    brandTitle.setBounds (30, 14, 250, 22);
-    subTitle.setBounds (30, 36, 250, 16);
+    brandTitle.setBounds (30, 10, 60, 32);
+    subTitle.setBounds (95, 18, 550, 20);
 
     // Left FX Unit
     delayTimeKnob.setBounds (45, 88, 68, 78);
@@ -323,14 +359,14 @@ void EXAudioProcessorEditor::resized()
     playPauseButton.setBounds (cX - 80, 285, 75, 28);
     dragMidiButton.setBounds (cX + 5, 285, 75, 28);
 
-    // Lower Controls
-    sourceTitle.setBounds (50, 350, 150, 18);
-    sourceKeySelector.setBounds (50, 375, 70, 24);
-    sourceBpmSlider.setBounds (130, 375, 110, 24);
+    // Lower Controls (Input vs Target)
+    sourceTitle.setBounds (50, 345, 150, 18);
+    sourceKeySelector.setBounds (50, 368, 70, 24);
+    sourceBpmSlider.setBounds (130, 368, 110, 24);
 
-    targetTitle.setBounds (getWidth() - 240, 350, 150, 18);
-    targetKeySelector.setBounds (getWidth() - 240, 375, 70, 24);
-    targetBpmSlider.setBounds (getWidth() - 160, 375, 110, 24);
+    targetTitle.setBounds (getWidth() - 240, 345, 150, 18);
+    targetKeySelector.setBounds (getWidth() - 240, 368, 70, 24);
+    targetBpmSlider.setBounds (getWidth() - 160, 368, 110, 24);
 
-    halfTimeToggle.setBounds (cX - 65, 375, 140, 24);
+    halfTimeToggle.setBounds (cX - 65, 368, 140, 24);
 }
