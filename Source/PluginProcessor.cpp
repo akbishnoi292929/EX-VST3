@@ -6,19 +6,19 @@ juce::AudioProcessorValueTreeState::ParameterLayout EXAudioProcessor::createPara
     std::vector<std::unique_ptr<juce::RangedAudioParameter>> params;
 
     params.push_back (std::make_unique<juce::AudioParameterFloat>(
-        juce::ParameterID { "TAPE_DRIVE", 1 }, "Drive", 0.0f, 1.0f, 0.0f));
+        juce::ParameterID { "TAPE_DRIVE", 1 }, "Tape Drive", 0.0f, 1.0f, 0.0f));
     params.push_back (std::make_unique<juce::AudioParameterFloat>(
-        juce::ParameterID { "DELAY_TIME", 1 }, "Time", 0.05f, 0.8f, 0.3f));
+        juce::ParameterID { "DELAY_TIME", 1 }, "Delay Time", 0.05f, 0.8f, 0.3f));
     params.push_back (std::make_unique<juce::AudioParameterFloat>(
-        juce::ParameterID { "DELAY_MIX", 1 }, "Dly Mix", 0.0f, 1.0f, 0.0f));
+        juce::ParameterID { "DELAY_MIX", 1 }, "Delay Mix", 0.0f, 1.0f, 0.0f));
     params.push_back (std::make_unique<juce::AudioParameterFloat>(
-        juce::ParameterID { "REVERB_SIZE", 1 }, "Space", 0.0f, 1.0f, 0.5f));
+        juce::ParameterID { "REVERB_SIZE", 1 }, "Space Size", 0.0f, 1.0f, 0.5f));
     params.push_back (std::make_unique<juce::AudioParameterFloat>(
-        juce::ParameterID { "REVERB_MIX", 1 }, "Rvb Mix", 0.0f, 1.0f, 0.0f));
+        juce::ParameterID { "REVERB_MIX", 1 }, "Reverb Mix", 0.0f, 1.0f, 0.0f));
     params.push_back (std::make_unique<juce::AudioParameterFloat>(
-        juce::ParameterID { "FILTER_CUTOFF", 1 }, "Filter", 50.0f, 20000.0f, 20000.0f));
+        juce::ParameterID { "FILTER_CUTOFF", 1 }, "Filter Cutoff", 50.0f, 20000.0f, 20000.0f));
     params.push_back (std::make_unique<juce::AudioParameterFloat>(
-        juce::ParameterID { "MASTER_OUT", 1 }, "Master", 0.0f, 2.0f, 1.0f));
+        juce::ParameterID { "MASTER_OUT", 1 }, "Master Gain", 0.0f, 2.0f, 1.0f));
 
     return { params.begin(), params.end() };
 }
@@ -60,7 +60,7 @@ void EXAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     delayBuffer.clear();
     delayWriteIndex = 0;
 
-    samplesPerStep = static_cast<int> ((60.0 / std::max (60, targetBpm)) * 0.25 * sampleRate);
+    samplesPerStep = static_cast<int> ((60.0 / std::max (60, masterTargetBpm)) * 0.25 * sampleRate);
 }
 
 void EXAudioProcessor::releaseResources()
@@ -76,17 +76,19 @@ bool EXAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
     return true;
 }
 
-void EXAudioProcessor::analyzeAudioBpmAndKey()
+// Cognitive Chromagram & Spectral Flux Detection
+void EXAudioProcessor::analyzeAudioBpmAndKey (int layerIdx)
 {
-    if (sampleBuffer.getNumSamples() == 0) return;
+    auto& track = tracks[layerIdx];
+    if (track.buffer.getNumSamples() == 0) return;
 
-    int totalSamples = sampleBuffer.getNumSamples();
-    const float* data = sampleBuffer.getReadPointer (0);
+    int totalSamples = track.buffer.getNumSamples();
+    const float* data = track.buffer.getReadPointer (0);
 
-    // 1. Accurate Energy-Envelope BPM Beat Tracker
+    // 1. Accurate Energy-Envelope BPM Detection
     int stepSize = 441; // 10ms window
     int numFrames = totalSamples / stepSize;
-    std::vector<float> energyEnvelope (numFrames, 0.0f);
+    std::vector<float> energyEnv (numFrames, 0.0f);
 
     for (int f = 0; f < numFrames; ++f)
     {
@@ -96,18 +98,17 @@ void EXAudioProcessor::analyzeAudioBpmAndKey()
             float s = data[f * stepSize + i];
             sum += s * s;
         }
-        energyEnvelope[f] = std::sqrt (sum / stepSize);
+        energyEnv[f] = std::sqrt (sum / stepSize);
     }
 
-    // Auto-correlate energy envelope for tempo lag (60 to 180 BPM)
     float maxCorr = 0.0f;
-    int bestLagFrames = 44; // ~135 BPM default
+    int bestLagFrames = 44; // ~135 BPM fallback
 
-    for (int lag = 33; lag <= 100; ++lag) // ~60 BPM to 180 BPM
+    for (int lag = 33; lag <= 100; ++lag) // 60 BPM to 180 BPM
     {
         float corr = 0.0f;
-        for (size_t f = 0; f < energyEnvelope.size() - lag; ++f)
-            corr += energyEnvelope[f] * energyEnvelope[f + lag];
+        for (size_t f = 0; f < energyEnv.size() - lag; ++f)
+            corr += energyEnv[f] * energyEnv[f + lag];
 
         if (corr > maxCorr)
         {
@@ -116,21 +117,18 @@ void EXAudioProcessor::analyzeAudioBpmAndKey()
         }
     }
 
-    double beatDurationSeconds = (bestLagFrames * stepSize) / 44100.0;
-    if (beatDurationSeconds > 0.25)
-    {
-        sourceBpm = juce::jlimit (70, 180, (int) std::round (60.0 / beatDurationSeconds));
-    }
-    targetBpm = sourceBpm;
+    double beatDur = (bestLagFrames * stepSize) / 44100.0;
+    if (beatDur > 0.25)
+        track.sourceBpm = juce::jlimit (70, 180, (int) std::round (60.0 / beatDur));
 
-    // 2. 12-Bin Musical Chromagram Key Detection
-    double chromaEnergy[12] = { 0.0 };
+    // 2. 12-Bin Pitch Chromagram for Musical Key
+    double chroma[12] = { 0.0 };
     int maxAnalyze = std::min (44100 * 3, totalSamples);
 
     for (int lag = 80; lag < 450; lag += 2)
     {
         double freq = 44100.0 / lag;
-        if (freq >= 65.4 && freq <= 523.25) // C2 to C5
+        if (freq >= 65.4 && freq <= 523.25)
         {
             int midiNote = (int) std::round (69.0 + 12.0 * std::log2 (freq / 440.0));
             int pitchClass = ((midiNote % 12) + 12) % 12;
@@ -139,7 +137,7 @@ void EXAudioProcessor::analyzeAudioBpmAndKey()
             for (int i = 0; i < maxAnalyze - lag; i += 24)
                 corr += data[i] * data[i + lag];
 
-            chromaEnergy[pitchClass] += std::max (0.0f, corr);
+            chroma[pitchClass] += std::max (0.0f, corr);
         }
     }
 
@@ -147,38 +145,52 @@ void EXAudioProcessor::analyzeAudioBpmAndKey()
     double maxChroma = 0.0;
     for (int k = 0; k < 12; ++k)
     {
-        if (chromaEnergy[k] > maxChroma)
+        if (chroma[k] > maxChroma)
         {
-            maxChroma = chromaEnergy[k];
+            maxChroma = chroma[k];
             bestKey = k;
         }
     }
 
-    sourceKey = bestKey;
-    sourceScaleMode = 0; // Minor
-    targetKey = sourceKey;
-    targetScaleMode = sourceScaleMode;
+    track.sourceKey = bestKey;
+    track.sourceScaleMode = 0; // Minor
 }
 
-void EXAudioProcessor::loadAudioFile (const juce::File& file)
+void EXAudioProcessor::loadAudioFileToLayer (int layerIdx, const juce::File& file)
 {
+    if (layerIdx < 0 || layerIdx >= 3) return;
+    auto& track = tracks[layerIdx];
+
     std::unique_ptr<juce::AudioFormatReader> reader (formatManager.createReaderFor (file));
     if (reader != nullptr)
     {
-        sampleBuffer.setSize (2, static_cast<int> (reader->lengthInSamples));
-        reader->read (&sampleBuffer, 0, static_cast<int> (reader->lengthInSamples), 0, true, true);
+        track.buffer.setSize (2, static_cast<int> (reader->lengthInSamples));
+        reader->read (&track.buffer, 0, static_cast<int> (reader->lengthInSamples), 0, true, true);
 
-        analyzeAudioBpmAndKey();
-        applyGridSlicing (currentGrid);
-        rollDiceAndFlipPattern();
+        track.hasAudio = true;
+        track.fileName = file.getFileNameWithoutExtension().substring (0, 14);
+
+        analyzeAudioBpmAndKey (layerIdx);
+        applyGridSlicingToLayer (layerIdx, currentGrid);
+        rollDiceAndGenerateMasterPattern();
     }
 }
 
-void EXAudioProcessor::applyGridSlicing (GridDivision div)
+void EXAudioProcessor::clearLayer (int layerIdx)
 {
-    currentGrid = div;
-    sliceMarkers.clear();
-    int total = sampleBuffer.getNumSamples();
+    if (layerIdx < 0 || layerIdx >= 3) return;
+    tracks[layerIdx].buffer.setSize (2, 0);
+    tracks[layerIdx].sliceMarkers.clear();
+    tracks[layerIdx].hasAudio = false;
+    tracks[layerIdx].fileName = "EMPTY SLOT";
+}
+
+void EXAudioProcessor::applyGridSlicingToLayer (int layerIdx, GridDivision div)
+{
+    if (layerIdx < 0 || layerIdx >= 3) return;
+    auto& track = tracks[layerIdx];
+    track.sliceMarkers.clear();
+    int total = track.buffer.getNumSamples();
     if (total == 0) return;
 
     int numCuts = 16;
@@ -189,17 +201,17 @@ void EXAudioProcessor::applyGridSlicing (GridDivision div)
     else if (div == GridDivision::Triplet1_6) numCuts = 12;
     else if (div == GridDivision::Transient)
     {
-        const float* d = sampleBuffer.getReadPointer (0);
+        const float* d = track.buffer.getReadPointer (0);
         int spacing = total / 24;
-        sliceMarkers.push_back (0);
+        track.sliceMarkers.push_back (0);
         int last = 0;
         for (int i = 1; i < total - 1; ++i)
         {
             if (std::abs (d[i] - d[i - 1]) > 0.12f && (i - last) > spacing)
             {
-                sliceMarkers.push_back (i);
+                track.sliceMarkers.push_back (i);
                 last = i;
-                if (sliceMarkers.size() >= 16) break;
+                if (track.sliceMarkers.size() >= 16) break;
             }
         }
         return;
@@ -207,75 +219,75 @@ void EXAudioProcessor::applyGridSlicing (GridDivision div)
 
     int stepSize = total / numCuts;
     for (int i = 0; i < numCuts; ++i)
-        sliceMarkers.push_back (i * stepSize);
+        track.sliceMarkers.push_back (i * stepSize);
 }
 
-void EXAudioProcessor::setSlicePosition (int markerIndex, int newSamplePosition)
+void EXAudioProcessor::setSlicePosition (int layerIdx, int markerIdx, int newSamplePos)
 {
-    if (markerIndex >= 0 && markerIndex < static_cast<int> (sliceMarkers.size()))
+    if (layerIdx < 0 || layerIdx >= 3) return;
+    auto& track = tracks[layerIdx];
+    if (markerIdx >= 0 && markerIdx < static_cast<int> (track.sliceMarkers.size()))
     {
-        sliceMarkers[static_cast<size_t> (markerIndex)] = juce::jlimit (0, sampleBuffer.getNumSamples() - 1, newSamplePosition);
-        std::sort (sliceMarkers.begin(), sliceMarkers.end());
+        track.sliceMarkers[static_cast<size_t> (markerIdx)] = juce::jlimit (0, track.buffer.getNumSamples() - 1, newSamplePos);
+        std::sort (track.sliceMarkers.begin(), track.sliceMarkers.end());
     }
 }
 
-void EXAudioProcessor::rollDiceAndFlipPattern()
+// Master Generative AI/Harmonic Flip Engine
+void EXAudioProcessor::rollDiceAndGenerateMasterPattern()
 {
     patternSteps.clear();
-    int count = static_cast<int> (sliceMarkers.size());
-    if (count == 0) return;
 
-    // Trigger Dice 3D Roll Animation
+    std::vector<int> loadedTracks;
+    for (int i = 0; i < 3; ++i)
+        if (tracks[i].hasAudio && !tracks[i].sliceMarkers.empty())
+            loadedTracks.push_back (i);
+
+    if (loadedTracks.empty()) return;
+
+    // Trigger 3D Dice Roll Animation
     isDiceRolling.store (true);
     diceRollProgress = 0.0f;
     juce::Random rng;
     activeDiceNumber = 1 + rng.nextInt (6);
 
-    // Musical Scale Palette
-    std::vector<int> chords;
-    if (targetScaleMode == 1)      // Major: 1, 3, 5, 6, 8, 10
-        chords = { 0, 4, 7, 9, 12, 16, 2 };
-    else if (targetScaleMode == 2) // Dorian: 1, b3, 4, 5, 6, b7
-        chords = { 0, 3, 5, 7, 9, 10, 14 };
-    else if (targetScaleMode == 3) // Phrygian (Dark Trap): 1, b2, 4, 5, b6, b7
-        chords = { 0, 1, 5, 7, 8, 10, 12 };
-    else                           // Natural Minor: 1, b3, 4, 5, b6, b7
-        chords = { 0, 3, 5, 7, 8, 10, 12 };
+    // Master Scale Intervals
+    std::vector<int> targetIntervals;
+    if (masterTargetScaleMode == 1)      // Major
+        targetIntervals = { 0, 4, 7, 9, 12, 16, 2 };
+    else if (masterTargetScaleMode == 2) // Dorian
+        targetIntervals = { 0, 3, 5, 7, 9, 10, 14 };
+    else if (masterTargetScaleMode == 3) // Phrygian
+        targetIntervals = { 0, 1, 5, 7, 8, 10, 12 };
+    else                                 // Natural Minor
+        targetIntervals = { 0, 3, 5, 7, 8, 10, 12 };
 
-    int keyDelta = targetKey - sourceKey;
-
-    // Call-and-Response Loop Progression (Bar 1: Intro phrase, Bar 2: Response, Bar 3: High Tension, Bar 4: Drop resolution)
-    int rootSlice = rng.nextInt (std::max (1, count / 2));
-    int bounceSlice = (rootSlice + 2) % count;
-
-    for (int i = 0; i < 16; ++i)
+    // Musical 16-Step Arranger blending all active tracks seamlessly
+    for (int step = 0; step < 16; ++step)
     {
         FlipStep s;
-        // Hip-hop syncopation (Steps 0, 3, 6, 8, 10, 12, 14)
-        if (i == 0 || i == 6 || i == 8 || i == 12)
+        // Select track: Call & Response distribution
+        int tIdx = loadedTracks[(size_t) rng.nextInt ((int) loadedTracks.size())];
+        if (loadedTracks.size() > 1)
         {
-            s.isGate = true;
-            s.sliceIdx = rootSlice;
-            s.pitchOffset = keyDelta + chords[0]; // Anchor Root
-            s.velocity = 1.0f;
-            s.isReverse = false;
+            if (step % 4 == 0) tIdx = loadedTracks[0]; // Anchor track
+            else if (step % 4 == 2 && loadedTracks.size() > 1) tIdx = loadedTracks[1]; // Counter phrase
         }
-        else if (i == 3 || i == 10 || i == 14)
-        {
-            s.isGate = true;
-            s.sliceIdx = bounceSlice;
-            s.pitchOffset = keyDelta + chords[rng.nextInt ((int) chords.size())];
-            s.velocity = 0.85f;
-            s.isReverse = (rng.nextFloat() > 0.65f); // Reverse fill
-        }
-        else
-        {
-            s.isGate = (rng.nextFloat() > 0.50f);
-            s.sliceIdx = rng.nextInt (count);
-            s.pitchOffset = keyDelta + chords[rng.nextInt ((int) chords.size())];
-            s.velocity = 0.75f;
-            s.isReverse = false;
-        }
+
+        auto& selTrack = tracks[tIdx];
+        s.trackIdx = tIdx;
+        s.sliceIdx = rng.nextInt ((int) selTrack.sliceMarkers.size());
+
+        // Strict Harmonic Offset: Snap track source key directly to Master Target Key
+        int keyOffset = masterTargetKey - selTrack.sourceKey;
+        int interval = targetIntervals[(size_t) rng.nextInt ((int) targetIntervals.size())];
+        s.pitchOffset = keyOffset + interval;
+
+        // Hip-hop / Drill syncopated gating
+        s.isGate = (step % 2 == 0) || (rng.nextFloat() > 0.40f);
+        s.velocity = 0.82f + (rng.nextFloat() * 0.18f);
+        s.isReverse = (rng.nextFloat() > 0.82f);
+
         patternSteps.push_back (s);
     }
 
@@ -287,7 +299,6 @@ void EXAudioProcessor::rollDiceAndFlipPattern()
 
 void EXAudioProcessor::togglePlayback()
 {
-    if (sampleBuffer.getNumSamples() == 0) return;
     isPlayingPattern.store (!isPlayingPattern.load());
     if (isPlayingPattern.load())
     {
@@ -298,11 +309,10 @@ void EXAudioProcessor::togglePlayback()
 
 juce::File EXAudioProcessor::exportCurrentAsAudioWav()
 {
-    auto tempWav = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("EX_Rendered_Loop.wav");
+    auto tempWav = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("EX_Rendered_Workstation_Loop.wav");
     tempWav.deleteFile();
 
-    if (sampleBuffer.getNumSamples() == 0 || patternSteps.empty())
-        return tempWav;
+    if (patternSteps.empty()) return tempWav;
 
     int totalSamples = samplesPerStep * 16;
     juce::AudioBuffer<float> renderBuf (2, totalSamples);
@@ -311,10 +321,12 @@ juce::File EXAudioProcessor::exportCurrentAsAudioWav()
     for (int step = 0; step < 16; ++step)
     {
         const auto& s = patternSteps[(size_t) step];
-        if (s.isGate && s.sliceIdx < (int) sliceMarkers.size())
+        auto& trk = tracks[s.trackIdx];
+        if (trk.hasAudio && s.isGate && s.sliceIdx < (int) trk.sliceMarkers.size())
         {
-            int start = sliceMarkers[(size_t) s.sliceIdx];
-            int end = (s.sliceIdx + 1 < (int) sliceMarkers.size()) ? sliceMarkers[(size_t) s.sliceIdx + 1] : sampleBuffer.getNumSamples();
+            int start = trk.sliceMarkers[(size_t) s.sliceIdx];
+            int end = (s.sliceIdx + 1 < (int) trk.sliceMarkers.size()) ? trk.sliceMarkers[(size_t) s.sliceIdx + 1] : trk.buffer.getNumSamples();
+
             double pRatio = std::pow (2.0, s.pitchOffset / 12.0);
             if (halfTimeMode) pRatio *= 0.5;
 
@@ -326,10 +338,10 @@ juce::File EXAudioProcessor::exportCurrentAsAudioWav()
                 int curR = (int) rPos;
                 if ((!s.isReverse && curR < end) || (s.isReverse && curR >= start))
                 {
-                    if (writeStart + i < totalSamples && curR < sampleBuffer.getNumSamples() && curR >= 0)
+                    if (writeStart + i < totalSamples && curR < trk.buffer.getNumSamples() && curR >= 0)
                     {
                         for (int ch = 0; ch < 2; ++ch)
-                            renderBuf.setSample (ch, writeStart + i, sampleBuffer.getSample (ch % sampleBuffer.getNumChannels(), curR));
+                            renderBuf.setSample (ch, writeStart + i, trk.buffer.getSample (ch % trk.buffer.getNumChannels(), curR) * trk.volume);
                     }
                     rPos += (s.isReverse ? -pRatio : pRatio);
                 }
@@ -348,7 +360,7 @@ juce::File EXAudioProcessor::exportCurrentAsAudioWav()
 
 juce::File EXAudioProcessor::exportCurrentAsMidi()
 {
-    auto temp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("EX_Flip_Groove.mid");
+    auto temp = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile ("EX_Workstation_Groove.mid");
     temp.deleteFile();
 
     juce::MidiFile mf;
@@ -360,7 +372,7 @@ juce::File EXAudioProcessor::exportCurrentAsMidi()
     {
         if (patternSteps[i].isGate)
         {
-            int note = 60 + patternSteps[i].sliceIdx;
+            int note = 60 + patternSteps[i].sliceIdx + (patternSteps[i].trackIdx * 12);
             double sTick = static_cast<double> (i * tickPerStep);
             double eTick = sTick + (tickPerStep - 20);
 
@@ -388,7 +400,7 @@ void EXAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
     const float cutoff    = apvts.getRawParameterValue ("FILTER_CUTOFF")->load();
     const float masterOut = apvts.getRawParameterValue ("MASTER_OUT")->load();
 
-    int baseBpm = std::max (60, targetBpm);
+    int baseBpm = std::max (60, masterTargetBpm);
     double stepSeconds = (60.0 / baseBpm) * 0.25;
     if (halfTimeMode) stepSeconds *= 2.0;
     samplesPerStep = static_cast<int> (stepSeconds * getSampleRate());
@@ -398,12 +410,17 @@ void EXAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
         auto msg = meta.getMessage();
         if (msg.isNoteOn())
         {
-            int idx = msg.getNoteNumber() - 60;
-            if (idx >= 0 && idx < static_cast<int> (sliceMarkers.size()))
+            int raw = msg.getNoteNumber() - 60;
+            int trkIdx = juce::jlimit (0, 2, raw / 12);
+            int sIdx = raw % 12;
+
+            auto& trk = tracks[trkIdx];
+            if (trk.hasAudio && sIdx < (int) trk.sliceMarkers.size())
             {
-                playheadPosition = static_cast<double> (sliceMarkers[static_cast<size_t> (idx)]);
-                playheadEnd = (idx + 1 < static_cast<int> (sliceMarkers.size())) ? sliceMarkers[static_cast<size_t> (idx + 1)] : sampleBuffer.getNumSamples();
-                pitchSpeed = std::pow (2.0, (targetKey - sourceKey) / 12.0);
+                activeTrackIdx = trkIdx;
+                playheadPosition = static_cast<double> (trk.sliceMarkers[(size_t) sIdx]);
+                playheadEnd = (sIdx + 1 < (int) trk.sliceMarkers.size()) ? trk.sliceMarkers[(size_t) sIdx + 1] : trk.buffer.getNumSamples();
+                pitchSpeed = std::pow (2.0, (masterTargetKey - trk.sourceKey) / 12.0);
                 currentStepReverse = false;
                 isVoiceActive = true;
             }
@@ -416,7 +433,7 @@ void EXAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
 
     for (int s = 0; s < buffer.getNumSamples(); ++s)
     {
-        if (isPlayingPattern.load() && !patternSteps.empty() && sampleBuffer.getNumSamples() > 0)
+        if (isPlayingPattern.load() && !patternSteps.empty())
         {
             stepClock++;
             if (stepClock >= samplesPerStep)
@@ -425,12 +442,15 @@ void EXAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
                 currentStepIndex = (currentStepIndex + 1) % static_cast<int> (patternSteps.size());
 
                 const auto& step = patternSteps[static_cast<size_t> (currentStepIndex)];
-                if (step.isGate && step.sliceIdx < static_cast<int> (sliceMarkers.size()))
+                auto& trk = tracks[step.trackIdx];
+
+                if (trk.hasAudio && !trk.isMute && step.isGate && step.sliceIdx < static_cast<int> (trk.sliceMarkers.size()))
                 {
-                    int startPt = sliceMarkers[static_cast<size_t> (step.sliceIdx)];
-                    int endPt = (step.sliceIdx + 1 < static_cast<int> (sliceMarkers.size()))
-                                ? sliceMarkers[static_cast<size_t> (step.sliceIdx + 1)]
-                                : sampleBuffer.getNumSamples();
+                    activeTrackIdx = step.trackIdx;
+                    int startPt = trk.sliceMarkers[static_cast<size_t> (step.sliceIdx)];
+                    int endPt = (step.sliceIdx + 1 < static_cast<int> (trk.sliceMarkers.size()))
+                                ? trk.sliceMarkers[static_cast<size_t> (step.sliceIdx + 1)]
+                                : trk.buffer.getNumSamples();
 
                     currentStepReverse = step.isReverse;
                     playheadPosition = currentStepReverse ? static_cast<double> (endPt - 1) : static_cast<double> (startPt);
@@ -447,29 +467,33 @@ void EXAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
             }
         }
 
-        if (isVoiceActive && sampleBuffer.getNumSamples() > 0)
+        if (isVoiceActive)
         {
-            int rPos = static_cast<int> (playheadPosition);
-            bool isValid = currentStepReverse ? (rPos >= playheadEnd && rPos >= 0)
-                                              : (rPos < playheadEnd && rPos < sampleBuffer.getNumSamples());
-
-            if (isValid)
+            auto& trk = tracks[activeTrackIdx];
+            if (trk.hasAudio && trk.buffer.getNumSamples() > 0)
             {
-                float gainEnv = 1.0f;
-                int distFromEdge = currentStepReverse ? (rPos - playheadEnd) : (playheadEnd - rPos);
-                if (distFromEdge < 64)
-                    gainEnv = static_cast<float> (distFromEdge) / 64.0f;
+                int rPos = static_cast<int> (playheadPosition);
+                bool isValid = currentStepReverse ? (rPos >= playheadEnd && rPos >= 0)
+                                                  : (rPos < playheadEnd && rPos < trk.buffer.getNumSamples());
 
-                for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+                if (isValid)
                 {
-                    int sCh = ch % sampleBuffer.getNumChannels();
-                    buffer.addSample (ch, s, sampleBuffer.getSample (sCh, rPos) * gainEnv);
+                    float gainEnv = 1.0f;
+                    int distFromEdge = currentStepReverse ? (rPos - playheadEnd) : (playheadEnd - rPos);
+                    if (distFromEdge < 64)
+                        gainEnv = static_cast<float> (distFromEdge) / 64.0f;
+
+                    for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+                    {
+                        int sCh = ch % trk.buffer.getNumChannels();
+                        buffer.addSample (ch, s, trk.buffer.getSample (sCh, rPos) * trk.volume * gainEnv);
+                    }
+                    playheadPosition += (currentStepReverse ? -pitchSpeed : pitchSpeed);
                 }
-                playheadPosition += (currentStepReverse ? -pitchSpeed : pitchSpeed);
-            }
-            else
-            {
-                isVoiceActive = false;
+                else
+                {
+                    isVoiceActive = false;
+                }
             }
         }
     }
