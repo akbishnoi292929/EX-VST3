@@ -1,19 +1,48 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 
-void EXAudioProcessorEditor::setupVintageKnob (juce::Slider& s, juce::Label& l, const juce::String& name)
+void VintageHardwareKnobLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int width, int height,
+                                                      float sliderPos, float rotaryStartAngle,
+                                                      float rotaryEndAngle, juce::Slider&)
 {
+    auto radius = (float) juce::jmin (width / 2, height / 2) - 4.0f;
+    auto centreX = (float) x + (float) width * 0.5f;
+    auto centreY = (float) y + (float) height * 0.5f;
+    auto angle = rotaryStartAngle + sliderPos * (rotaryEndAngle - rotaryStartAngle);
+
+    // 1. Ribbed Outer Base Ring (Bakelite Black)
+    g.setColour (juce::Colour (0xff1f2126));
+    g.fillEllipse (centreX - radius, centreY - radius, radius * 2.0f, radius * 2.0f);
+
+    // 2. Inner Red Cap (Vintage Reference)
+    float capR = radius * 0.72f;
+    g.setColour (juce::Colour (0xffb82222));
+    g.fillEllipse (centreX - capR, centreY - capR, capR * 2.0f, capR * 2.0f);
+
+    // Subtle 3D Bezel
+    g.setColour (juce::Colour (0x44ffffff));
+    g.drawEllipse (centreX - capR, centreY - capR, capR * 2.0f, capR * 2.0f, 1.2f);
+
+    // 3. Crisp White Indicator Pointer Line
+    juce::Path p;
+    auto pointerLen = capR * 0.85f;
+    p.addRectangle (-1.5f, -pointerLen, 3.0f, pointerLen);
+    p.applyTransform (juce::AffineTransform::rotation (angle).translated (centreX, centreY));
+    g.setColour (juce::Colours::white);
+    g.fillPath (p);
+}
+
+void EXAudioProcessorEditor::setupHardwareKnob (juce::Slider& s, juce::Label& l, const juce::String& name)
+{
+    s.setLookAndFeel (&vintageKnobLAF);
     s.setSliderStyle (juce::Slider::RotaryVerticalDrag);
-    s.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 50, 15);
-    s.setColour (juce::Slider::rotarySliderFillColourId, juce::Colour (0xffb82525));
-    s.setColour (juce::Slider::rotarySliderOutlineColourId, juce::Colour (0xff36383e));
-    s.setColour (juce::Slider::thumbColourId, juce::Colour (0xfff0f0f0));
+    s.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 55, 14);
     s.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
     s.setColour (juce::Slider::textBoxTextColourId, juce::Colour (0xff2b2b2b));
     addAndMakeVisible (s);
 
     l.setText (name, juce::dontSendNotification);
-    l.setFont (juce::Font (11.0f, juce::Font::bold));
+    l.setFont (juce::Font (10.5f, juce::Font::bold));
     l.setJustificationType (juce::Justification::centred);
     l.setColour (juce::Label::textColourId, juce::Colour (0xff4a4c52));
     addAndMakeVisible (l);
@@ -44,16 +73,16 @@ EXAudioProcessorEditor::EXAudioProcessorEditor (EXAudioProcessor& p)
     subTitle.setColour (juce::Label::textColourId, juce::Colour (0xff7a7c85));
     addAndMakeVisible (subTitle);
 
-    // Source Controls
-    sourceSectionTitle.setText ("INPUT SAMPLE", juce::dontSendNotification);
-    sourceSectionTitle.setFont (juce::Font (11.0f, juce::Font::bold));
-    sourceSectionTitle.setColour (juce::Label::textColourId, juce::Colour (0xff9e3333));
-    addAndMakeVisible (sourceSectionTitle);
+    // Source
+    sourceTitle.setText ("SOURCE SAMPLE", juce::dontSendNotification);
+    sourceTitle.setFont (juce::Font (11.0f, juce::Font::bold));
+    sourceTitle.setColour (juce::Label::textColourId, juce::Colour (0xff9e3333));
+    addAndMakeVisible (sourceTitle);
 
     setupKeySelector (sourceKeySelector);
-    sourceKeySelector.setSelectedId (audioProcessor.sourceKeyIdx + 1, juce::dontSendNotification);
+    sourceKeySelector.setSelectedId (audioProcessor.sourceKey + 1, juce::dontSendNotification);
     sourceKeySelector.onChange = [this]() {
-        audioProcessor.sourceKeyIdx = sourceKeySelector.getSelectedId() - 1;
+        audioProcessor.sourceKey = sourceKeySelector.getSelectedId() - 1;
     };
 
     sourceBpmSlider.setRange (60, 200, 1);
@@ -65,16 +94,16 @@ EXAudioProcessorEditor::EXAudioProcessorEditor (EXAudioProcessor& p)
     };
     addAndMakeVisible (sourceBpmSlider);
 
-    // Target Controls
-    targetSectionTitle.setText ("PROJECT TARGET", juce::dontSendNotification);
-    targetSectionTitle.setFont (juce::Font (11.0f, juce::Font::bold));
-    targetSectionTitle.setColour (juce::Label::textColourId, juce::Colour (0xff206b3e));
-    addAndMakeVisible (targetSectionTitle);
+    // Target
+    targetTitle.setText ("TARGET PROJECT", juce::dontSendNotification);
+    targetTitle.setFont (juce::Font (11.0f, juce::Font::bold));
+    targetTitle.setColour (juce::Label::textColourId, juce::Colour (0xff206b3e));
+    addAndMakeVisible (targetTitle);
 
     setupKeySelector (targetKeySelector);
-    targetKeySelector.setSelectedId (audioProcessor.targetKeyIdx + 1, juce::dontSendNotification);
+    targetKeySelector.setSelectedId (audioProcessor.targetKey + 1, juce::dontSendNotification);
     targetKeySelector.onChange = [this]() {
-        audioProcessor.targetKeyIdx = targetKeySelector.getSelectedId() - 1;
+        audioProcessor.targetKey = targetKeySelector.getSelectedId() - 1;
     };
 
     targetBpmSlider.setRange (60, 200, 1);
@@ -86,32 +115,32 @@ EXAudioProcessorEditor::EXAudioProcessorEditor (EXAudioProcessor& p)
     };
     addAndMakeVisible (targetBpmSlider);
 
-    // Center Big Interactive 3D Dice Button
+    // Center Buttons
     diceButton.setButtonText (juce::CharPointer_UTF8 ("\xf0\x9f\x8e\xb2 FLIP DICE"));
-    diceButton.setColour (juce::TextButton::buttonColourId, juce::Colour (0xffa62424));
+    diceButton.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff9e1e1e));
     diceButton.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
     diceButton.onClick = [this]() {
-        audioProcessor.rollDiceAndGenerateMelody();
+        audioProcessor.rollDiceAndFlipPattern();
         repaint();
     };
     addAndMakeVisible (diceButton);
 
     playPauseButton.setButtonText (juce::CharPointer_UTF8 ("\xe2\x96\xb6 PLAY"));
-    playPauseButton.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff32353b));
+    playPauseButton.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff2d3036));
     playPauseButton.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
     playPauseButton.onClick = [this]() {
-        audioProcessor.toggleAudition();
-        playPauseButton.setButtonText (audioProcessor.isAuditionPlaying()
+        audioProcessor.togglePlayback();
+        playPauseButton.setButtonText (audioProcessor.isPlayingActive()
             ? juce::CharPointer_UTF8 ("\xe2\x8f\xb8 PAUSE")
             : juce::CharPointer_UTF8 ("\xe2\x96\xb6 PLAY"));
     };
     addAndMakeVisible (playPauseButton);
 
     dragMidiButton.setButtonText ("DRAG MIDI");
-    dragMidiButton.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff244b70));
+    dragMidiButton.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff234a6e));
     dragMidiButton.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
     dragMidiButton.onClick = [this]() {
-        auto mf = audioProcessor.exportCurrentSequenceAsMidi();
+        auto mf = audioProcessor.generateMidiFile();
         if (mf.existsAsFile())
         {
             juce::StringArray files;
@@ -121,14 +150,21 @@ EXAudioProcessorEditor::EXAudioProcessorEditor (EXAudioProcessor& p)
     };
     addAndMakeVisible (dragMidiButton);
 
-    // FX Knobs
-    setupVintageKnob (delayTimeKnob, delayTimeLabel, "TIME");
-    setupVintageKnob (delayMixKnob, delayMixLabel, "DLY MIX");
-    setupVintageKnob (reverbSizeKnob, rvbSizeLabel, "SPACE");
-    setupVintageKnob (reverbMixKnob, rvbMixLabel, "RVB MIX");
-    setupVintageKnob (tapeDriveKnob, tapeLabel, "TAPE DRIVE");
-    setupVintageKnob (filterCutoffKnob, filterLabel, "FILTER");
-    setupVintageKnob (masterOutKnob, masterLabel, "MASTER");
+    halfTimeToggle.setButtonText ("HALFTIME (1/2X)");
+    halfTimeToggle.setColour (juce::ToggleButton::textColourId, juce::Colour (0xff333333));
+    halfTimeToggle.onClick = [this]() {
+        audioProcessor.halfTimeMode = halfTimeToggle.getToggleState();
+    };
+    addAndMakeVisible (halfTimeToggle);
+
+    // Knobs
+    setupHardwareKnob (delayTimeKnob, delayTimeLabel, "TIME");
+    setupHardwareKnob (delayMixKnob, delayMixLabel, "DLY MIX");
+    setupHardwareKnob (reverbSizeKnob, rvbSizeLabel, "SPACE");
+    setupHardwareKnob (reverbMixKnob, rvbMixLabel, "RVB MIX");
+    setupHardwareKnob (tapeDriveKnob, tapeLabel, "TAPE DRIVE");
+    setupHardwareKnob (filterCutoffKnob, filterLabel, "FILTER");
+    setupHardwareKnob (masterOutKnob, masterLabel, "MASTER");
 
     delayTimeAtt = std::make_unique<Attachment> (audioProcessor.apvts, "DELAY_TIME", delayTimeKnob);
     delayMixAtt  = std::make_unique<Attachment> (audioProcessor.apvts, "DELAY_MIX",  delayMixKnob);
@@ -145,15 +181,19 @@ EXAudioProcessorEditor::EXAudioProcessorEditor (EXAudioProcessor& p)
 EXAudioProcessorEditor::~EXAudioProcessorEditor()
 {
     stopTimer();
+    setLookAndFeel (nullptr);
 }
 
 void EXAudioProcessorEditor::timerCallback()
 {
-    sourceKeySelector.setSelectedId (audioProcessor.sourceKeyIdx + 1, juce::dontSendNotification);
+    sourceKeySelector.setSelectedId (audioProcessor.sourceKey + 1, juce::dontSendNotification);
     sourceBpmSlider.setValue (audioProcessor.sourceBpm, juce::dontSendNotification);
 
-    if (audioProcessor.isAuditionPlaying())
-        repaint();
+    radarAngle += 0.05f;
+    if (radarAngle > juce::MathConstants<float>::twoPi)
+        radarAngle -= juce::MathConstants<float>::twoPi;
+
+    repaint();
 }
 
 bool EXAudioProcessorEditor::isInterestedInFileDrag (const juce::StringArray& files)
@@ -174,83 +214,79 @@ void EXAudioProcessorEditor::filesDropped (const juce::StringArray& files, int, 
 
 void EXAudioProcessorEditor::paint (juce::Graphics& g)
 {
-    // 1. Vintage Wooden Side Cheeks
-    g.fillAll (juce::Colour (0xff57331d));
+    // Wood cheeks
+    g.fillAll (juce::Colour (0xff4a2c18));
 
-    // 2. Off-White / Cream Console Body Plate
+    // Console Body
     auto body = getLocalBounds().reduced (14, 10).toFloat();
-    g.setColour (juce::Colour (0xffeae7de));
+    g.setColour (juce::Colour (0xffece9e1));
     g.fillRoundedRectangle (body, 6.0f);
 
     g.setColour (juce::Colour (0xffcfcac0));
     g.drawRoundedRectangle (body, 6.0f, 2.0f);
 
     // Decorative Screws
-    g.setColour (juce::Colour (0xff9e9a91));
+    g.setColour (juce::Colour (0xffa8a49c));
     g.fillEllipse (20.0f, 16.0f, 7.0f, 7.0f);
     g.fillEllipse (static_cast<float> (getWidth() - 27), 16.0f, 7.0f, 7.0f);
     g.fillEllipse (20.0f, static_cast<float> (getHeight() - 23), 7.0f, 7.0f);
     g.fillEllipse (static_cast<float> (getWidth() - 27), static_cast<float> (getHeight() - 23), 7.0f, 7.0f);
 
-    // Top Header Plate
-    g.setColour (juce::Colour (0xffded9cd));
-    g.drawHorizontalLine (56, body.getX(), body.getRight());
+    // Circular Oscilloscope Radar
+    float cX = getWidth() * 0.5f;
+    float cY = 190.0f;
+    float r = 78.0f;
 
-    // 3. Center Circular Oscilloscope / Radar
-    float centerX = getWidth() * 0.5f;
-    float centerY = 190.0f;
-    float radius = 80.0f;
+    // Outer Silver Bezel
+    g.setColour (juce::Colour (0xffb8b4a8));
+    g.drawEllipse (cX - r - 4.0f, cY - r - 4.0f, (r + 4.0f) * 2.0f, (r + 4.0f) * 2.0f, 3.5f);
 
-    // Outer Bezel
-    g.setColour (juce::Colour (0xffb5b0a3));
-    g.drawEllipse (centerX - radius - 4.0f, centerY - radius - 4.0f, (radius + 4.0f) * 2.0f, (radius + 4.0f) * 2.0f, 3.0f);
+    // Dark Maroon Scope Glass
+    g.setColour (juce::Colour (0xff3b0a0a));
+    g.fillEllipse (cX - r, cY - r, r * 2.0f, r * 2.0f);
 
-    // Dark Red Radar Glass
-    g.setColour (juce::Colour (0xff400d0d));
-    g.fillEllipse (centerX - radius, centerY - radius, radius * 2.0f, radius * 2.0f);
+    // Radar Grids
+    g.setColour (juce::Colour (0x33cf3838));
+    for (float gR = 20.0f; gR < 80.0f; gR += 20.0f)
+        g.drawEllipse (cX - gR, cY - gR, gR * 2.0f, gR * 2.0f, 1.0f);
+    g.drawLine (cX - r, cY, cX + r, cY, 1.0f);
+    g.drawLine (cX, cY - r, cX, cY + r, 1.0f);
 
-    // Radar Grid Lines
-    g.setColour (juce::Colour (0x33b83232));
-    for (float r = 20.0f; r < 80.0f; r += 20.0f)
-        g.drawEllipse (centerX - r, centerY - r, r * 2.0f, r * 2.0f, 1.0f);
-    g.drawLine (centerX - radius, centerY, centerX + radius, centerY, 1.0f);
-    g.drawLine (centerX, centerY - radius, centerX, centerY + radius, 1.0f);
+    // Rotating Radar Scan Line
+    float scanX = cX + std::cos (radarAngle) * r;
+    float scanY = cY + std::sin (radarAngle) * r;
+    g.setColour (juce::Colour (0x66ff3b30));
+    g.drawLine (cX, cY, scanX, scanY, 1.5f);
 
-    // Neon Red/Orange Oscilloscope Waveform
+    // Pulsing Waveform Display
     auto& buf = audioProcessor.getAudioBuffer();
     if (buf.getNumSamples() > 0)
     {
         g.setColour (juce::Colour (0xffff3b30));
         int numSamples = buf.getNumSamples();
-        for (int x = -60; x < 60; ++x)
+        for (int x = -55; x < 55; ++x)
         {
-            int idx = static_cast<int> (((x + 60) / 120.0f) * static_cast<float> (numSamples));
+            int idx = static_cast<int> (((x + 55) / 110.0f) * static_cast<float> (numSamples));
             idx = juce::jlimit (0, numSamples - 1, idx);
             float val = buf.getSample (0, idx);
-            g.drawLine (centerX + static_cast<float> (x), centerY - (val * 45.0f),
-                        centerX + static_cast<float> (x), centerY + (val * 45.0f), 1.2f);
+            g.drawLine (cX + static_cast<float> (x), cY - (val * 40.0f),
+                        cX + static_cast<float> (x), cY + (val * 40.0f), 1.4f);
         }
     }
-    else
-    {
-        g.setColour (juce::Colour (0xffa65353));
-        g.setFont (12.0f);
-        g.drawText ("DROP SAMPLE", static_cast<int> (centerX - 50.0f), static_cast<int> (centerY - 25.0f), 100, 20, juce::Justification::centred);
-    }
 
-    // 4. Panel Insets for Left & Right FX Units
+    // Inset Boxes
     g.setColour (juce::Colour (0xffe2dfd4));
-    auto leftBox = juce::Rectangle<float> (30.0f, 75.0f, 230.0f, 240.0f);
-    auto rightBox = juce::Rectangle<float> (static_cast<float> (getWidth() - 260), 75.0f, 230.0f, 240.0f);
+    auto leftBox = juce::Rectangle<float> (30.0f, 70.0f, 230.0f, 245.0f);
+    auto rightBox = juce::Rectangle<float> (static_cast<float> (getWidth() - 260), 70.0f, 230.0f, 245.0f);
     g.fillRoundedRectangle (leftBox, 4.0f);
     g.fillRoundedRectangle (rightBox, 4.0f);
     g.setColour (juce::Colour (0xffcfcac0));
     g.drawRoundedRectangle (leftBox, 4.0f, 1.0f);
     g.drawRoundedRectangle (rightBox, 4.0f, 1.0f);
 
-    // 5. Lower Sample & Scale Control Bar
-    auto lowerBar = juce::Rectangle<float> (30.0f, 330.0f, static_cast<float> (getWidth() - 60), 205.0f);
-    g.setColour (juce::Colour (0xffdfdbcf));
+    // Lower Plate
+    auto lowerBar = juce::Rectangle<float> (30.0f, 335.0f, static_cast<float> (getWidth() - 60), 200.0f);
+    g.setColour (juce::Colour (0xffe2dfd5));
     g.fillRoundedRectangle (lowerBar, 4.0f);
     g.setColour (juce::Colour (0xffc4beb2));
     g.drawRoundedRectangle (lowerBar, 4.0f, 1.0f);
@@ -262,37 +298,39 @@ void EXAudioProcessorEditor::resized()
     subTitle.setBounds (30, 36, 250, 16);
 
     // Left FX Unit
-    delayTimeKnob.setBounds (45, 95, 65, 75);
-    delayTimeLabel.setBounds (45, 172, 65, 16);
-    delayMixKnob.setBounds (125, 95, 65, 75);
-    delayMixLabel.setBounds (125, 172, 65, 16);
+    delayTimeKnob.setBounds (45, 88, 68, 78);
+    delayTimeLabel.setBounds (45, 168, 68, 16);
+    delayMixKnob.setBounds (125, 88, 68, 78);
+    delayMixLabel.setBounds (125, 168, 68, 16);
 
-    reverbSizeKnob.setBounds (45, 205, 65, 75);
-    rvbSizeLabel.setBounds (45, 282, 65, 16);
-    reverbMixKnob.setBounds (125, 205, 65, 75);
-    rvbMixLabel.setBounds (125, 282, 65, 16);
+    reverbSizeKnob.setBounds (45, 200, 68, 78);
+    rvbSizeLabel.setBounds (45, 280, 68, 16);
+    reverbMixKnob.setBounds (125, 200, 68, 78);
+    rvbMixLabel.setBounds (125, 280, 68, 16);
 
     // Right FX Unit
-    tapeDriveKnob.setBounds (getWidth() - 245, 95, 65, 75);
-    tapeLabel.setBounds (getWidth() - 245, 172, 65, 16);
-    filterCutoffKnob.setBounds (getWidth() - 165, 95, 65, 75);
-    filterLabel.setBounds (getWidth() - 165, 172, 65, 16);
+    tapeDriveKnob.setBounds (getWidth() - 245, 88, 68, 78);
+    tapeLabel.setBounds (getWidth() - 245, 168, 68, 16);
+    filterCutoffKnob.setBounds (getWidth() - 165, 88, 68, 78);
+    filterLabel.setBounds (getWidth() - 165, 168, 68, 16);
 
-    masterOutKnob.setBounds (getWidth() - 205, 205, 65, 75);
-    masterLabel.setBounds (getWidth() - 205, 282, 65, 16);
+    masterOutKnob.setBounds (getWidth() - 205, 200, 68, 78);
+    masterLabel.setBounds (getWidth() - 205, 280, 68, 16);
 
     // Center Controls
     int cX = getWidth() / 2;
-    diceButton.setBounds (cX - 65, 200, 130, 34);
+    diceButton.setBounds (cX - 65, 195, 130, 34);
     playPauseButton.setBounds (cX - 80, 285, 75, 28);
     dragMidiButton.setBounds (cX + 5, 285, 75, 28);
 
     // Lower Controls
-    sourceSectionTitle.setBounds (50, 345, 150, 18);
-    sourceKeySelector.setBounds (50, 370, 70, 24);
-    sourceBpmSlider.setBounds (130, 370, 110, 24);
+    sourceTitle.setBounds (50, 350, 150, 18);
+    sourceKeySelector.setBounds (50, 375, 70, 24);
+    sourceBpmSlider.setBounds (130, 375, 110, 24);
 
-    targetSectionTitle.setBounds (getWidth() - 240, 345, 150, 18);
-    targetKeySelector.setBounds (getWidth() - 240, 370, 70, 24);
-    targetBpmSlider.setBounds (getWidth() - 160, 370, 110, 24);
+    targetTitle.setBounds (getWidth() - 240, 350, 150, 18);
+    targetKeySelector.setBounds (getWidth() - 240, 375, 70, 24);
+    targetBpmSlider.setBounds (getWidth() - 160, 375, 110, 24);
+
+    halfTimeToggle.setBounds (cX - 65, 375, 140, 24);
 }
