@@ -245,8 +245,12 @@ void EXAudioProcessor::setSlicePosition (int layerIdx, int markerIdx, int newSam
     }
 }
 
-// Call & Response Melodic Engine
 void EXAudioProcessor::rollDiceAndGenerateMasterPattern()
+{
+    runCoordinatedAiGeneration();
+}
+
+void EXAudioProcessor::runCoordinatedAiGeneration()
 {
     patternSteps.clear();
 
@@ -267,7 +271,7 @@ void EXAudioProcessor::rollDiceAndGenerateMasterPattern()
     activeDiceNumber = 1 + rng.nextInt (6);
 
     int progressionType = rng.nextInt (4);
-    
+
     int anchorSlice = rng.nextInt ((int) tracks[loadedTracks[0]].sliceMarkers.size());
     int answerSlice = (anchorSlice + 2) % (int) tracks[loadedTracks[0]].sliceMarkers.size();
 
@@ -388,7 +392,6 @@ void EXAudioProcessor::togglePlayback()
     }
 }
 
-// Timestamp Hash to avoid FL Studio Cache Locking
 juce::File EXAudioProcessor::exportCurrentAsAudioWav()
 {
     juce::int64 timestamp = juce::Time::currentTimeMillis();
