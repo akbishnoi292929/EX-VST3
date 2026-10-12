@@ -123,7 +123,7 @@ static int snapToZeroCrossing (const juce::AudioBuffer<float>& buf, int targetSa
     return bestSample;
 }
 
-// REAL MUSICAL TEMPO-AWARE SLICING (BPM Beat Grid + Transient Hybrid)
+// ADAPTIVE FULL-LENGTH TRANSIENT & GRID SLICER (COVERS ENTIRE WAVEFORM UNIFORMLY)
 void EXAudioProcessor::applyGridSlicingToLayer (int layerIdx, GridDivision div)
 {
     if (layerIdx < 0 || layerIdx >= 3) return;
@@ -135,60 +135,55 @@ void EXAudioProcessor::applyGridSlicingToLayer (int layerIdx, GridDivision div)
     if (div == GridDivision::Transient)
     {
         const float* d = track.buffer.getReadPointer (0);
-        int window = 512;
-        int minDistance = total / 24;
         track.sliceMarkers.push_back (0);
 
-        float prevEnergy = 0.0f;
-        int lastCut = 0;
+        int numDesiredCuts = 16;
+        int minDistance = total / (numDesiredCuts + 4);
+        int window = 256;
 
+        std::vector<float> energyProfile;
         for (int i = 0; i < total - window; i += window)
         {
-            float curEnergy = 0.0f;
+            float e = 0.0f;
             for (int k = 0; k < window; ++k)
-                curEnergy += std::abs (d[i + k]);
-
-            if (curEnergy > prevEnergy * 2.2f && curEnergy > 6.0f && (i - lastCut) > minDistance)
-            {
-                int snapped = snapToZeroCrossing (track.buffer, i);
-                track.sliceMarkers.push_back (snapped);
-                lastCut = i;
-                if (track.sliceMarkers.size() >= 16) break;
-            }
-            prevEnergy = curEnergy * 0.85f;
+                e += std::abs (d[i + k]);
+            energyProfile.push_back (e);
         }
 
-        if (track.sliceMarkers.size() < 4)
+        // Peak transient pickers across the full duration
+        int lastCut = 0;
+        for (size_t p = 1; p < energyProfile.size() - 1; ++p)
+        {
+            int samplePos = (int) p * window;
+            if (energyProfile[p] > energyProfile[p - 1] * 1.6f && (samplePos - lastCut) > minDistance)
+            {
+                track.sliceMarkers.push_back (snapToZeroCrossing (track.buffer, samplePos));
+                lastCut = samplePos;
+            }
+        }
+
+        // If transients were too few or uneven, populate musical divisions evenly across the WHOLE file
+        if (track.sliceMarkers.size() < 8)
         {
             track.sliceMarkers.clear();
-            int stepSize = total / 8;
-            for (int i = 0; i < 8; ++i)
+            int stepSize = total / 16;
+            for (int i = 0; i < 16; ++i)
                 track.sliceMarkers.push_back (snapToZeroCrossing (track.buffer, i * stepSize));
         }
         return;
     }
 
-    // BPM-AWARE MUSICAL GRID SLICING: Beats and subdivisions calculated from tempo
-    double sRate = (getSampleRate() > 0.0) ? getSampleRate() : 44100.0;
-    double secPerBeat = 60.0 / std::max (60, track.sourceBpm);
-    int samplesPerBeat = static_cast<int> (secPerBeat * sRate);
+    // Grid modes: Divide the entire loop proportionally so nothing is cut off
+    int numCuts = 16;
+    if (div == GridDivision::Quarter)        numCuts = 4;
+    else if (div == GridDivision::Eighth)    numCuts = 8;
+    else if (div == GridDivision::Sixteenth) numCuts = 16;
+    else if (div == GridDivision::Triplet1_3) numCuts = 6;
+    else if (div == GridDivision::Triplet1_6) numCuts = 12;
 
-    int stepSize = samplesPerBeat; // 1/4 (1 beat)
-    if (div == GridDivision::Eighth)        stepSize = samplesPerBeat / 2;
-    else if (div == GridDivision::Sixteenth) stepSize = samplesPerBeat / 4;
-    else if (div == GridDivision::Triplet1_3) stepSize = static_cast<int> (samplesPerBeat * (4.0 / 3.0));
-    else if (div == GridDivision::Triplet1_6) stepSize = static_cast<int> (samplesPerBeat * (2.0 / 3.0));
-
-    if (stepSize <= 0) stepSize = total / 16;
-
-    for (int pos = 0; pos < total; pos += stepSize)
-    {
-        track.sliceMarkers.push_back (snapToZeroCrossing (track.buffer, pos));
-        if (track.sliceMarkers.size() >= 16) break;
-    }
-
-    if (track.sliceMarkers.empty())
-        track.sliceMarkers.push_back (0);
+    int stepSize = total / numCuts;
+    for (int i = 0; i < numCuts; ++i)
+        track.sliceMarkers.push_back (snapToZeroCrossing (track.buffer, i * stepSize));
 }
 
 void EXAudioProcessor::runAdvancedAiAudioAnalysis (int layerIdx)
@@ -281,7 +276,7 @@ void EXAudioProcessor::loadAudioFileToLayer (int layerIdx, const juce::File& fil
         track.fileName = file.getFileNameWithoutExtension().substring (0, 10);
 
         runAdvancedAiAudioAnalysis (layerIdx);
-        applyGridSlicingToLayer (layerIdx, currentGrid);
+        applyGridSlicingToLayer (layerIdx, GridDivision::Transient);
 
         if (layerIdx == 0)
         {
@@ -326,7 +321,7 @@ void EXAudioProcessor::rollDiceAndGenerateMasterPattern()
     runCoordinatedAiGeneration();
 }
 
-// HUMAN GROOVE & SOULFUL MELODY GENERATION ENGINE
+// EQUAL PRIORITY MULTI-LAYER COLLABORATION BRAIN (TRUE CALL-AND-RESPONSE)
 void EXAudioProcessor::runCoordinatedAiGeneration()
 {
     patternSteps.clear();
@@ -350,10 +345,6 @@ void EXAudioProcessor::runCoordinatedAiGeneration()
     int progressionType = rng.nextInt (6);
     const int minorScale[8] = { 0, 2, 3, 5, 7, 8, 10, 12 };
 
-    int mainTrack = loadedTracks[0];
-    int numSlices = (int) tracks[mainTrack].sliceMarkers.size();
-    int signatureTone = rng.nextInt (std::max (1, numSlices / 2));
-
     for (int step = 0; step < 16; ++step)
     {
         FlipStep s;
@@ -362,63 +353,68 @@ void EXAudioProcessor::runCoordinatedAiGeneration()
         int rootChord = AiMatrixData::BillboardTrapChordChains[progressionType][bar];
 
         bool isPlay = false;
-        int activeTrack = mainTrack;
-        int activeSlice = signatureTone;
+        int activeTrack = loadedTracks[0];
+        int activeSlice = 0;
         int intervalPitch = rootChord;
 
-        // Humanized dynamic velocity curve (Natural acoustic hand dynamics)
-        float humanVelocity = 0.85f + (rng.nextFloat() * 0.12f);
+        // TRUE EQUAL-WEIGHT COLLABORATION BETWEEN ALL LOADED LAYERS
+        if (loadedTracks.size() == 1)
+        {
+            activeTrack = loadedTracks[0];
+            int totalSlices = (int) tracks[activeTrack].sliceMarkers.size();
+            activeSlice = (bar * 2 + beat) % totalSlices;
+        }
+        else if (loadedTracks.size() == 2)
+        {
+            // Bar 0 & 2 Lead = Layer 1, Bar 1 & 3 Lead = Layer 2 (Equal 50/50 Dialog!)
+            if (beat == 0)
+            {
+                activeTrack = (bar % 2 == 0) ? loadedTracks[0] : loadedTracks[1];
+            }
+            else
+            {
+                // Counter note comes from the OPPOSITE layer
+                activeTrack = (bar % 2 == 0) ? loadedTracks[1] : loadedTracks[0];
+            }
+            int totalSlices = (int) tracks[activeTrack].sliceMarkers.size();
+            activeSlice = rng.nextInt (totalSlices);
+        }
+        else if (loadedTracks.size() >= 3)
+        {
+            // 3-Way Trio Arrangement:
+            // Bar 0: Layer 1 Lead | Bar 1: Layer 2 Lead | Bar 2: Layer 3 Lead | Bar 3: Tutti Combined
+            int leadTrack = loadedTracks[bar % 3];
+            int counterTrack = loadedTracks[(bar + 1) % 3];
+            activeTrack = (beat == 0) ? leadTrack : counterTrack;
+            int totalSlices = (int) tracks[activeTrack].sliceMarkers.size();
+            activeSlice = rng.nextInt (totalSlices);
+        }
 
-        if (beat == 0) // Foundation anchor
+        // Catchy Musical Phrasing (Beat 0 = Solid Hit, Beat 2 = Syncopation, Beat 3 = Melodic Turnaround)
+        if (beat == 0)
         {
             isPlay = true;
-            activeTrack = mainTrack;
-            activeSlice = signatureTone;
             intervalPitch = rootChord;
             s.pan = 0.0f;
             s.velocity = 0.98f;
             s.distanceDepth = 0.0f;
         }
-        else if (beat == 2) // Syncopated answering lick
+        else if (beat == 2)
         {
-            if (rng.nextFloat() > 0.22f)
-            {
-                isPlay = true;
-                if (loadedTracks.size() >= 2 && rng.nextFloat() > 0.35f)
-                {
-                    activeTrack = loadedTracks[1];
-                    activeSlice = rng.nextInt ((int) tracks[activeTrack].sliceMarkers.size());
-                    intervalPitch = rootChord + minorScale[2 + rng.nextInt (3)];
-                }
-                else
-                {
-                    activeTrack = mainTrack;
-                    activeSlice = (signatureTone + 1) % numSlices;
-                    intervalPitch = rootChord + minorScale[2];
-                }
-                s.pan = (bar % 2 == 0) ? -0.32f : 0.32f;
-                s.velocity = humanVelocity * 0.92f;
-                s.distanceDepth = 0.20f;
-            }
+            isPlay = true;
+            intervalPitch = rootChord + minorScale[2 + (step % 3)]; // Harmonics (3rd, 4th, 5th)
+            s.pan = (bar % 2 == 0) ? -0.35f : 0.35f;
+            s.velocity = 0.88f;
+            s.distanceDepth = 0.20f;
         }
-        else if (beat == 3 && (bar == 1 || bar == 3)) // Musical ear-candy turnaround
+        else if (beat == 3 && (bar == 1 || bar == 3))
         {
-            if (rng.nextFloat() > 0.28f)
+            if (rng.nextFloat() > 0.25f)
             {
                 isPlay = true;
-                if (loadedTracks.size() >= 3 && rng.nextFloat() > 0.35f)
-                {
-                    activeTrack = loadedTracks[2];
-                    activeSlice = rng.nextInt ((int) tracks[activeTrack].sliceMarkers.size());
-                }
-                else
-                {
-                    activeTrack = mainTrack;
-                    activeSlice = signatureTone;
-                }
-                intervalPitch = rootChord + minorScale[6];
+                intervalPitch = rootChord + minorScale[6]; // High resolution note
                 s.pan = (bar == 1) ? 0.55f : -0.55f;
-                s.velocity = humanVelocity * 0.86f;
+                s.velocity = 0.82f;
                 s.distanceDepth = 0.40f;
             }
         }
