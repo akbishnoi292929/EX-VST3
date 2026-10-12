@@ -153,6 +153,37 @@ void EXAudioProcessor::runAdvancedAiAudioAnalysis (int layerIdx)
     }
 }
 
+// Zero-Crossing Detection Utility to kill boundary clicks permanently
+static int snapToZeroCrossing (const juce::AudioBuffer<float>& buf, int targetSample)
+{
+    if (buf.getNumSamples() <= 0) return 0;
+    int clamped = juce::jlimit (0, buf.getNumSamples() - 1, targetSample);
+    const float* channel = buf.getReadPointer (0);
+
+    int searchWindow = 256;
+    int start = std::max (0, clamped - searchWindow);
+    int end = std::min (buf.getNumSamples() - 2, clamped + searchWindow);
+
+    int bestSample = clamped;
+    float minAbsVal = std::abs (channel[clamped]);
+
+    for (int i = start; i <= end; ++i)
+    {
+        if ((channel[i] <= 0.0f && channel[i + 1] >= 0.0f) ||
+            (channel[i] >= 0.0f && channel[i + 1] <= 0.0f))
+        {
+            return i;
+        }
+        float absVal = std::abs (channel[i]);
+        if (absVal < minAbsVal)
+        {
+            minAbsVal = absVal;
+            bestSample = i;
+        }
+    }
+    return bestSample;
+}
+
 void EXAudioProcessor::loadAudioFileToLayer (int layerIdx, const juce::File& file)
 {
     if (layerIdx < 0 || layerIdx >= 3) return;
@@ -221,7 +252,7 @@ void EXAudioProcessor::applyGridSlicingToLayer (int layerIdx, GridDivision div)
         {
             if (std::abs (d[i] - d[i - 1]) > 0.12f && (i - last) > spacing)
             {
-                track.sliceMarkers.push_back (i);
+                track.sliceMarkers.push_back (snapToZeroCrossing (track.buffer, i));
                 last = i;
                 if (track.sliceMarkers.size() >= 16) break;
             }
@@ -231,7 +262,7 @@ void EXAudioProcessor::applyGridSlicingToLayer (int layerIdx, GridDivision div)
 
     int stepSize = total / numCuts;
     for (int i = 0; i < numCuts; ++i)
-        track.sliceMarkers.push_back (i * stepSize);
+        track.sliceMarkers.push_back (snapToZeroCrossing (track.buffer, i * stepSize));
 }
 
 void EXAudioProcessor::setSlicePosition (int layerIdx, int markerIdx, int newSamplePos)
@@ -240,7 +271,8 @@ void EXAudioProcessor::setSlicePosition (int layerIdx, int markerIdx, int newSam
     auto& track = tracks[layerIdx];
     if (markerIdx >= 0 && markerIdx < static_cast<int> (track.sliceMarkers.size()))
     {
-        track.sliceMarkers[static_cast<size_t> (markerIdx)] = juce::jlimit (0, track.buffer.getNumSamples() - 1, newSamplePos);
+        int snapped = snapToZeroCrossing (track.buffer, newSamplePos);
+        track.sliceMarkers[static_cast<size_t> (markerIdx)] = juce::jlimit (0, track.buffer.getNumSamples() - 1, snapped);
         std::sort (track.sliceMarkers.begin(), track.sliceMarkers.end());
     }
 }
@@ -271,7 +303,7 @@ void EXAudioProcessor::runCoordinatedAiGeneration()
     activeDiceNumber = 1 + rng.nextInt (6);
 
     int progressionType = rng.nextInt (4);
-
+    
     int anchorSlice = rng.nextInt ((int) tracks[loadedTracks[0]].sliceMarkers.size());
     int answerSlice = (anchorSlice + 2) % (int) tracks[loadedTracks[0]].sliceMarkers.size();
 
@@ -317,6 +349,7 @@ void EXAudioProcessor::runCoordinatedAiGeneration()
     renderMasterPreviewBuffer();
 }
 
+// Full DSP Render of Layer 4 Preview (Includes Tape Drive, Delay, Filter, Reverb & Limiter)
 void EXAudioProcessor::renderMasterPreviewBuffer()
 {
     int baseBpm = std::max (60, masterTargetBpm);
@@ -330,6 +363,7 @@ void EXAudioProcessor::renderMasterPreviewBuffer()
 
     if (patternSteps.empty()) return;
 
+    // 1. Raw Slices Assembly with S-Curve Boundary Fades
     for (int step = 0; step < 16; ++step)
     {
         const auto& s = patternSteps[(size_t) step];
@@ -354,21 +388,96 @@ void EXAudioProcessor::renderMasterPreviewBuffer()
                     {
                         if (writeStart + i < total && curR < trk.buffer.getNumSamples() && curR >= 0)
                         {
+                            // 256-sample True Cosine Anti-Click Envelope
                             float sliceEnv = 1.0f;
                             int distFromStart = i;
                             int distFromEnd = curSamplesPerStep - i;
-                            if (distFromStart < 128)
-                                sliceEnv = 0.5f * (1.0f - std::cos (juce::MathConstants<float>::pi * distFromStart / 128.0f));
-                            else if (distFromEnd < 128)
-                                sliceEnv = 0.5f * (1.0f - std::cos (juce::MathConstants<float>::pi * distFromEnd / 128.0f));
+                            if (distFromStart < 256)
+                                sliceEnv = 0.5f * (1.0f - std::cos (juce::MathConstants<float>::pi * distFromStart / 256.0f));
+                            else if (distFromEnd < 256)
+                                sliceEnv = 0.5f * (1.0f - std::cos (juce::MathConstants<float>::pi * distFromEnd / 256.0f));
 
                             for (int ch = 0; ch < 2; ++ch)
-                                masterPreviewBuffer.setSample (ch, writeStart + i, trk.buffer.getSample (ch % trk.buffer.getNumChannels(), curR) * trk.volume * sliceEnv * 0.55f);
+                                masterPreviewBuffer.setSample (ch, writeStart + i, trk.buffer.getSample (ch % trk.buffer.getNumChannels(), curR) * trk.volume * sliceEnv * 0.50f);
                         }
                         rPos += (s.isReverse ? -pRatio : pRatio);
                     }
                     else break;
                 }
+            }
+        }
+    }
+
+    // 2. Offline DSP Chain: Apply Tape, Delay, Filter, Reverb & Limiter onto Export Buffer
+    const float tapeDrive = apvts.getRawParameterValue ("TAPE_DRIVE")->load();
+    const float delayTime = apvts.getRawParameterValue ("DELAY_TIME")->load();
+    const float delayMix  = apvts.getRawParameterValue ("DELAY_MIX")->load();
+    const float rvbSize   = apvts.getRawParameterValue ("REVERB_SIZE")->load();
+    const float rvbMix    = apvts.getRawParameterValue ("REVERB_MIX")->load();
+    const float cutoff    = apvts.getRawParameterValue ("FILTER_CUTOFF")->load();
+    const float masterOut = apvts.getRawParameterValue ("MASTER_OUT")->load();
+
+    // Offline Tape Saturation
+    if (tapeDrive > 0.01f)
+    {
+        float gain = 1.0f + (tapeDrive * 2.5f);
+        for (int ch = 0; ch < 2; ++ch)
+        {
+            float* d = masterPreviewBuffer.getWritePointer (ch);
+            for (int i = 0; i < total; ++i)
+                d[i] = std::tanh (d[i] * gain) / std::tanh (gain);
+        }
+    }
+
+    // Offline Stereo Delay
+    if (delayMix > 0.01f)
+    {
+        int dSamples = static_cast<int> (delayTime * getSampleRate());
+        if (dSamples > 0 && dSamples < total)
+        {
+            for (int ch = 0; ch < 2; ++ch)
+            {
+                for (int i = dSamples; i < total; ++i)
+                {
+                    float dry = masterPreviewBuffer.getSample (ch, i);
+                    float wet = masterPreviewBuffer.getSample (ch, i - dSamples);
+                    masterPreviewBuffer.setSample (ch, i, dry + (wet * delayMix * 0.45f));
+                }
+            }
+        }
+    }
+
+    // Offline Filter
+    filter.setCutoffFrequency (cutoff);
+    juce::dsp::AudioBlock<float> blk (masterPreviewBuffer);
+    juce::dsp::ProcessContextReplacing<float> pCtx (blk);
+    filter.process (pCtx);
+
+    // Offline Reverb
+    if (rvbMix > 0.01f)
+    {
+        reverbParams.roomSize = rvbSize * 0.85f;
+        reverbParams.damping  = 0.45f;
+        reverbParams.wetLevel = rvbMix * 0.50f;
+        reverbParams.dryLevel = 1.0f - (rvbMix * 0.20f);
+        reverb.setParameters (reverbParams);
+        reverb.process (pCtx);
+    }
+
+    masterPreviewBuffer.applyGain (masterOut);
+
+    // Offline Studio Limiter
+    for (int ch = 0; ch < 2; ++ch)
+    {
+        float* d = masterPreviewBuffer.getWritePointer (ch);
+        for (int i = 0; i < total; ++i)
+        {
+            float absVal = std::abs (d[i]);
+            if (absVal > 0.82f)
+            {
+                float excess = absVal - 0.82f;
+                float compressed = 0.82f + 0.10f * std::tanh (excess * 3.0f);
+                d[i] = std::copysign (compressed, d[i]);
             }
         }
     }
