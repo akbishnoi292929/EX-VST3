@@ -10,8 +10,8 @@ struct FlipStep
     int sliceIdx = 0;
     int pitchOffset = 0;
     float velocity = 1.0f;
-    float pan = 0.0f;           // -1.0 to +1.0
-    float distanceDepth = 0.0f; // 0.0 (Near) to 1.0 (Far/Ambient)
+    float pan = 0.0f;
+    float distanceDepth = 0.0f;
     bool isReverse = false;
     bool isGate = true;
 };
@@ -96,6 +96,7 @@ public:
 
     juce::File exportCurrentAsAudioWav();
     juce::File exportCurrentAsMidi();
+    juce::StringArray exportCurrentAsStems();
 
     void togglePlayback();
     bool isPlayingActive() const { return isPlayingPattern.load(); }
@@ -107,7 +108,7 @@ public:
     int masterTargetKey = 0;
     int masterTargetScaleMode = 0;
     bool halfTimeMode = false;
-    GridDivision currentGrid = GridDivision::Eighth;
+    GridDivision currentGrid = GridDivision::Transient;
 
     std::atomic<bool> isDiceRolling { false };
     float diceRollProgress = 0.0f;
