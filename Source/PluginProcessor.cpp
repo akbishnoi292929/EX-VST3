@@ -85,7 +85,6 @@ bool EXAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
     return true;
 }
 
-// Dedicated AI Audio Analysis: High-Resolution Harmonic Pitch Profiler
 void EXAudioProcessor::runAdvancedAiAudioAnalysis (int layerIdx)
 {
     auto& track = tracks[layerIdx];
@@ -94,7 +93,6 @@ void EXAudioProcessor::runAdvancedAiAudioAnalysis (int layerIdx)
     int total = track.buffer.getNumSamples();
     const float* data = track.buffer.getReadPointer (0);
 
-    // Multi-bar Auto-Correlation BPM Solver
     double lengthSeconds = total / 44100.0;
     int candidates[] = { 4, 8, 16, 2 };
     int bestBpm = 130;
@@ -115,7 +113,6 @@ void EXAudioProcessor::runAdvancedAiAudioAnalysis (int layerIdx)
     }
     track.sourceBpm = juce::jlimit (70, 180, bestBpm);
 
-    // Harmonic Chromagram Focusing on Musical Fundamentals
     double chroma[12] = { 0.0 };
     int checkLen = std::min (44100 * 4, total);
 
@@ -154,12 +151,12 @@ void EXAudioProcessor::runAdvancedAiAudioAnalysis (int layerIdx)
     if (bestIdx < 12)
     {
         track.sourceKey = bestIdx;
-        track.sourceScaleMode = 1; // Major
+        track.sourceScaleMode = 1;
     }
     else
     {
         track.sourceKey = bestIdx - 12;
-        track.sourceScaleMode = 0; // Minor
+        track.sourceScaleMode = 0;
     }
 }
 
@@ -191,6 +188,49 @@ static int snapToZeroCrossing (const juce::AudioBuffer<float>& buf, int targetSa
         }
     }
     return bestSample;
+}
+
+struct SliceAcousticProfile
+{
+    float attackEnergy = 0.0f;
+    float brightness = 0.0f;
+    float sustainRMS = 0.0f;
+    bool isAnchorCandidate = false;
+};
+
+static SliceAcousticProfile evaluateSliceAcoustics (const AudioLayerTrack& trk, int sliceIdx)
+{
+    SliceAcousticProfile p;
+    if (!trk.hasAudio || sliceIdx < 0 || sliceIdx >= (int) trk.sliceMarkers.size())
+        return p;
+
+    int start = trk.sliceMarkers[(size_t) sliceIdx];
+    int end = (sliceIdx + 1 < (int) trk.sliceMarkers.size()) ? trk.sliceMarkers[(size_t) sliceIdx + 1] : trk.buffer.getNumSamples();
+    int len = std::min (end - start, 4096);
+    if (len <= 64) return p;
+
+    const float* data = trk.buffer.getReadPointer (0, start);
+
+    float attackMax = 0.0f;
+    for (int i = 0; i < std::min (len, 256); ++i)
+        attackMax = std::max (attackMax, std::abs (data[i]));
+
+    float sumSq = 0.0f;
+    float zeroCrossCount = 0.0f;
+    for (int i = 0; i < len; ++i)
+    {
+        sumSq += (data[i] * data[i]);
+        if (i > 0 && ((data[i] >= 0.0f && data[i - 1] < 0.0f) || (data[i] < 0.0f && data[i - 1] >= 0.0f)))
+            zeroCrossCount += 1.0f;
+    }
+    float rms = std::sqrt (sumSq / (float) len);
+
+    p.attackEnergy = attackMax;
+    p.sustainRMS = rms;
+    p.brightness = zeroCrossCount / (float) len;
+    p.isAnchorCandidate = (attackMax > 0.15f && rms > 0.05f);
+
+    return p;
 }
 
 void EXAudioProcessor::loadAudioFileToLayer (int layerIdx, const juce::File& file)
@@ -290,7 +330,9 @@ void EXAudioProcessor::rollDiceAndGenerateMasterPattern()
     runCoordinatedAiGeneration();
 }
 
-// Multi-Agent Melodic Collaboration Brain (Dedicated AI for Each Layer)
+// -----------------------------------------------------------------------------------------
+// REAL COHESIVE AI BRAIN: DYNAMIC TURN-TAKING, 3D PSYCHOACOUSTIC DEPTH & SUSTAINED NOTES
+// -----------------------------------------------------------------------------------------
 void EXAudioProcessor::runCoordinatedAiGeneration()
 {
     patternSteps.clear();
@@ -312,93 +354,107 @@ void EXAudioProcessor::runCoordinatedAiGeneration()
     activeDiceNumber = 1 + rng.nextInt (6);
 
     int progressionType = rng.nextInt (6);
+    const int scaleNotesMinor[7] = { 0, 2, 3, 5, 7, 8, 10 };
 
-    // AI Agent 1 (Foundation Anchor): Pick harmonic theme anchor slice
-    int anchorSlice = rng.nextInt ((int) tracks[loadedTracks[0]].sliceMarkers.size());
-    int answerSlice = (anchorSlice + 2) % (int) tracks[loadedTracks[0]].sliceMarkers.size();
+    std::vector<int> anchorCandidates;
+    std::vector<int> ambientCandidates;
+
+    for (int trkIdx : loadedTracks)
+    {
+        const auto& trk = tracks[trkIdx];
+        for (int s = 0; s < (int) trk.sliceMarkers.size(); ++s)
+        {
+            auto profile = evaluateSliceAcoustics (trk, s);
+            int packed = (trkIdx * 100) + s;
+            if (profile.isAnchorCandidate)
+                anchorCandidates.push_back (packed);
+            else
+                ambientCandidates.push_back (packed);
+        }
+    }
+
+    if (anchorCandidates.empty())
+        anchorCandidates.push_back ((loadedTracks[0] * 100) + 0);
+    if (ambientCandidates.empty())
+        ambientCandidates = anchorCandidates;
+
+    int anchorPacked = anchorCandidates[(size_t) rng.nextInt ((int) anchorCandidates.size())];
+    int anchorTrack = anchorPacked / 100;
+    int anchorSlice = anchorPacked % 100;
 
     for (int step = 0; step < 16; ++step)
     {
         FlipStep s;
-        int barIdx = step / 4;
+        int bar = step / 4;
         int stepInBar = step % 4;
+        int chordRoot = AiMatrixData::BillboardTrapChordChains[progressionType][bar];
 
-        int chordRoot = AiMatrixData::BillboardTrapChordChains[progressionType][barIdx];
-        int chosenTrack = loadedTracks[0];
+        bool isPlayStep = false;
+        int activeTrack = anchorTrack;
+        int activeSlice = anchorSlice;
+        int pitchDegree = 0;
 
-        // Intelligent Multi-Agent Layer Assignment
-        if (loadedTracks.size() == 1)
+        if (stepInBar == 0) // Downbeats: Foundation anchor
         {
-            chosenTrack = loadedTracks[0];
-            auto& trk = tracks[chosenTrack];
-            s.trackIdx = chosenTrack;
-
-            // Call & Response Phrasing
-            if (stepInBar == 0) s.sliceIdx = anchorSlice;
-            else if (stepInBar == 2) s.sliceIdx = answerSlice;
-            else s.sliceIdx = rng.nextInt ((int) trk.sliceMarkers.size());
-
-            s.pitchOffset = (masterTargetKey - trk.sourceKey) + chordRoot;
-            s.isGate = (stepInBar == 0) || (stepInBar == 2) || (rng.nextFloat() > 0.40f);
+            isPlayStep = true;
+            activeTrack = anchorTrack;
+            activeSlice = anchorSlice;
+            pitchDegree = chordRoot;
         }
-        else if (loadedTracks.size() == 2)
+        else if (stepInBar == 2) // Syncopated Response
         {
-            // Layer 1 = Downbeat Chords, Layer 2 = Syncopated Hook Melody
-            if (stepInBar == 0 || stepInBar == 2)
+            if (rng.nextFloat() > 0.30f)
             {
-                chosenTrack = loadedTracks[0];
-                s.trackIdx = chosenTrack;
-                s.sliceIdx = (stepInBar == 0) ? anchorSlice : answerSlice;
-                s.pitchOffset = (masterTargetKey - tracks[chosenTrack].sourceKey) + chordRoot;
-                s.isGate = true;
-            }
-            else
-            {
-                chosenTrack = loadedTracks[1];
-                s.trackIdx = chosenTrack;
-                s.sliceIdx = rng.nextInt ((int) tracks[chosenTrack].sliceMarkers.size());
-                int interval = AiMatrixData::CounterHarmonicOffsets[rng.nextInt (4)];
-                s.pitchOffset = (masterTargetKey - tracks[chosenTrack].sourceKey) + chordRoot + interval;
-                s.isGate = rng.nextFloat() > 0.30f;
+                isPlayStep = true;
+                int chosenPacked = (rng.nextFloat() > 0.5f && !ambientCandidates.empty())
+                                    ? ambientCandidates[(size_t) rng.nextInt ((int) ambientCandidates.size())]
+                                    : anchorCandidates[(size_t) rng.nextInt ((int) anchorCandidates.size())];
+                activeTrack = chosenPacked / 100;
+                activeSlice = chosenPacked % 100;
+                pitchDegree = chordRoot + scaleNotesMinor[2 + rng.nextInt (3)];
             }
         }
-        else if (loadedTracks.size() >= 3)
+        else if (stepInBar == 3 && (bar == 1 || bar == 3)) // Ear Candy Turnaround
         {
-            // Full 3-Agent Orchestration:
-            // Agent 1: Downbeat Foundation Chords (Step 0)
-            // Agent 2: Mid-register Harmonic Movement (Step 2)
-            // Agent 3: High-register Top-line Plucks & Ear Candy (Steps 1, 3)
-            if (stepInBar == 0)
+            if (rng.nextFloat() > 0.35f && !ambientCandidates.empty())
             {
-                chosenTrack = loadedTracks[0];
-                s.trackIdx = chosenTrack;
-                s.sliceIdx = anchorSlice;
-                s.pitchOffset = (masterTargetKey - tracks[chosenTrack].sourceKey) + chordRoot;
-                s.isGate = true;
-            }
-            else if (stepInBar == 2)
-            {
-                chosenTrack = loadedTracks[1];
-                s.trackIdx = chosenTrack;
-                s.sliceIdx = answerSlice;
-                int interval = AiMatrixData::CounterHarmonicOffsets[rng.nextInt (2)];
-                s.pitchOffset = (masterTargetKey - tracks[chosenTrack].sourceKey) + chordRoot + interval;
-                s.isGate = true;
-            }
-            else
-            {
-                chosenTrack = loadedTracks[2];
-                s.trackIdx = chosenTrack;
-                s.sliceIdx = rng.nextInt ((int) tracks[chosenTrack].sliceMarkers.size());
-                int interval = AiMatrixData::CounterHarmonicOffsets[2 + rng.nextInt (2)];
-                s.pitchOffset = (masterTargetKey - tracks[chosenTrack].sourceKey) + chordRoot + interval;
-                s.isGate = rng.nextFloat() > 0.35f;
+                isPlayStep = true;
+                int chosenPacked = ambientCandidates[(size_t) rng.nextInt ((int) ambientCandidates.size())];
+                activeTrack = chosenPacked / 100;
+                activeSlice = chosenPacked % 100;
+                pitchDegree = chordRoot + scaleNotesMinor[4];
             }
         }
 
-        // Apply Humanized Acoustic Groove Velocity & End-of-Bar Reverse Transition
-        s.velocity = AiMatrixData::HumanGrooveVelocities[step];
-        s.isReverse = (step == 7 || step == 15) ? (rng.nextFloat() > 0.45f) : false;
+        s.trackIdx = activeTrack;
+        s.sliceIdx = activeSlice;
+        s.isGate = isPlayStep;
+
+        auto profile = evaluateSliceAcoustics (tracks[activeTrack], activeSlice);
+
+        if (profile.isAnchorCandidate && stepInBar == 0)
+        {
+            s.pan = (rng.nextFloat() * 0.20f) - 0.10f;
+            s.distanceDepth = 0.05f;
+            s.velocity = 0.95f;
+        }
+        else if (profile.brightness > 0.08f)
+        {
+            float side = (step % 2 == 0) ? -0.55f : 0.55f;
+            s.pan = side + ((rng.nextFloat() * 0.2f) - 0.1f);
+            s.distanceDepth = 0.40f;
+            s.velocity = 0.80f;
+        }
+        else
+        {
+            s.pan = (rng.nextFloat() * 1.2f) - 0.6f;
+            s.distanceDepth = 0.65f;
+            s.velocity = 0.72f;
+        }
+
+        int keyDiff = masterTargetKey - tracks[activeTrack].sourceKey;
+        s.pitchOffset = keyDiff + (pitchDegree % 12);
+        s.isReverse = (step == 15 && rng.nextFloat() > 0.50f);
 
         patternSteps.push_back (s);
     }
@@ -406,7 +462,7 @@ void EXAudioProcessor::runCoordinatedAiGeneration()
     renderMasterPreviewBuffer();
 }
 
-void EXAudioProcessor::triggerNewSliceVoice (int trkIdx, int sliceIdx, int pitchOffset, bool reverse)
+void EXAudioProcessor::triggerNewSliceVoice (int trkIdx, int sliceIdx, int pitchOffset, float pan, float depth, bool reverse)
 {
     if (trkIdx < 0 || trkIdx >= 3) return;
     auto& trk = tracks[trkIdx];
@@ -434,6 +490,11 @@ void EXAudioProcessor::triggerNewSliceVoice (int trkIdx, int sliceIdx, int pitch
     v.speedRatio = std::pow (2.0, pitchOffset / 12.0);
     if (halfTimeMode) v.speedRatio *= 0.5;
 
+    float panAngle = (pan + 1.0f) * 0.25f * juce::MathConstants<float>::pi;
+    v.panL = std::cos (panAngle);
+    v.panR = std::sin (panAngle);
+    v.distance = depth;
+
     v.active = true;
     v.currentGain = 0.0f;
     v.targetGain = 1.0f;
@@ -456,10 +517,10 @@ void EXAudioProcessor::renderMasterPreviewBuffer()
     for (int step = 0; step < 16; ++step)
     {
         const auto& s = patternSteps[(size_t) step];
-        if (s.trackIdx >= 0 && s.trackIdx < 3)
+        if (s.isGate && s.trackIdx >= 0 && s.trackIdx < 3)
         {
             const auto& trk = tracks[s.trackIdx];
-            if (trk.hasAudio && !trk.isMute && s.isGate && s.sliceIdx < (int) trk.sliceMarkers.size() && trk.buffer.getNumSamples() > 0)
+            if (trk.hasAudio && !trk.isMute && s.sliceIdx < (int) trk.sliceMarkers.size() && trk.buffer.getNumSamples() > 0)
             {
                 int start = trk.sliceMarkers[(size_t) s.sliceIdx];
                 int end = (s.sliceIdx + 1 < (int) trk.sliceMarkers.size()) ? trk.sliceMarkers[(size_t) s.sliceIdx + 1] : trk.buffer.getNumSamples();
@@ -468,9 +529,15 @@ void EXAudioProcessor::renderMasterPreviewBuffer()
                 if (halfTimeMode) pRatio *= 0.5;
 
                 int writeStart = step * curSamplesPerStep;
+                int renderLength = std::min (curSamplesPerStep * 2, total - writeStart);
                 double rPos = s.isReverse ? (end - 1) : start;
 
-                for (int i = 0; i < curSamplesPerStep; ++i)
+                float panAngle = (s.pan + 1.0f) * 0.25f * juce::MathConstants<float>::pi;
+                float gainL = std::cos (panAngle);
+                float gainR = std::sin (panAngle);
+                float distDamp = 1.0f - (s.distanceDepth * 0.25f);
+
+                for (int i = 0; i < renderLength; ++i)
                 {
                     int curR = (int) rPos;
                     if ((!s.isReverse && curR < end) || (s.isReverse && curR >= start))
@@ -480,14 +547,18 @@ void EXAudioProcessor::renderMasterPreviewBuffer()
                             float env = 1.0f;
                             if (i < 256)
                                 env = 0.5f * (1.0f - std::cos (juce::MathConstants<float>::pi * i / 256.0f));
-                            else if (curSamplesPerStep - i < 256)
-                                env = 0.5f * (1.0f - std::cos (juce::MathConstants<float>::pi * (curSamplesPerStep - i) / 256.0f));
+                            else if (renderLength - i < 512)
+                                env = 0.5f * (1.0f - std::cos (juce::MathConstants<float>::pi * (renderLength - i) / 512.0f));
 
-                            for (int ch = 0; ch < 2; ++ch)
+                            float rawMono = trk.buffer.getSample (0, curR);
+                            if (trk.buffer.getNumChannels() > 1)
+                                rawMono = (rawMono + trk.buffer.getSample (1, curR)) * 0.5f;
+
+                            if (!std::isnan(rawMono) && !std::isinf(rawMono))
                             {
-                                float val = trk.buffer.getSample (ch % trk.buffer.getNumChannels(), curR);
-                                if (!std::isnan(val) && !std::isinf(val))
-                                    masterPreviewBuffer.setSample (ch, writeStart + i, val * trk.volume * env * s.velocity * 0.48f);
+                                float sampleVal = rawMono * trk.volume * env * s.velocity * distDamp * 0.44f;
+                                masterPreviewBuffer.addSample (0, writeStart + i, sampleVal * gainL);
+                                masterPreviewBuffer.addSample (1, writeStart + i, sampleVal * gainR);
                             }
                         }
                         rPos += (s.isReverse ? -pRatio : pRatio);
@@ -626,11 +697,14 @@ juce::File EXAudioProcessor::exportCurrentAsMidi()
     for (size_t i = 0; i < snapshotSteps.size(); ++i)
     {
         const auto& s = snapshotSteps[i];
-        if (s.trackIdx >= 0 && s.trackIdx < 3 && tracks[s.trackIdx].hasAudio && s.isGate)
+        if (s.isGate && s.trackIdx >= 0 && s.trackIdx < 3 && tracks[s.trackIdx].hasAudio)
         {
-            int note = 60 + s.sliceIdx;
+            int note = 60 + (s.pitchOffset % 24);
             double sTick = static_cast<double> (i * tickPerStep);
-            double eTick = sTick + (tickPerStep - 30);
+            double eTick = sTick + (tickPerStep * 2 - 40);
+
+            int midiPan = juce::jlimit (0, 127, static_cast<int> ((s.pan + 1.0f) * 63.5f));
+            noteTrack.addEvent (juce::MidiMessage::controllerEvent (1, 10, midiPan), sTick);
 
             noteTrack.addEvent (juce::MidiMessage::noteOn (1, note, static_cast<juce::uint8> (s.velocity * 127)), sTick);
             noteTrack.addEvent (juce::MidiMessage::noteOff (1, note), eTick);
@@ -675,7 +749,7 @@ void EXAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
             auto& trk = tracks[trkIdx];
             if (trk.hasAudio && sIdx < (int) trk.sliceMarkers.size())
             {
-                triggerNewSliceVoice (trkIdx, sIdx, masterTargetKey - trk.sourceKey, false);
+                triggerNewSliceVoice (trkIdx, sIdx, masterTargetKey - trk.sourceKey, 0.0f, 0.0f, false);
             }
         }
         else if (msg.isNoteOff() && !isPlayingPattern.load())
@@ -699,12 +773,12 @@ void EXAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
                 currentStepIndex = (currentStepIndex + 1) % static_cast<int> (patternSteps.size());
 
                 const auto& step = patternSteps[static_cast<size_t> (currentStepIndex)];
-                if (step.trackIdx >= 0 && step.trackIdx < 3)
+                if (step.isGate && step.trackIdx >= 0 && step.trackIdx < 3)
                 {
                     auto& trk = tracks[step.trackIdx];
-                    if (trk.hasAudio && !trk.isMute && step.isGate && step.sliceIdx < static_cast<int> (trk.sliceMarkers.size()))
+                    if (trk.hasAudio && !trk.isMute && step.sliceIdx < static_cast<int> (trk.sliceMarkers.size()))
                     {
-                        triggerNewSliceVoice (step.trackIdx, step.sliceIdx, step.pitchOffset, step.isReverse);
+                        triggerNewSliceVoice (step.trackIdx, step.sliceIdx, step.pitchOffset, step.pan, step.distanceDepth, step.isReverse);
                     }
                 }
             }
@@ -738,17 +812,25 @@ void EXAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
                     }
 
                     float smoothGain = 0.5f * (1.0f - std::cos (juce::MathConstants<float>::pi * v.currentGain));
-                    float finalGain = trk.volume * smoothGain * 0.48f;
+                    float distDamp = 1.0f - (v.distance * 0.25f);
+                    float finalGain = trk.volume * smoothGain * distDamp * 0.44f;
 
-                    for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
+                    float s0 = trk.buffer.getSample (0, rPos);
+                    float s1 = trk.buffer.getSample (0, rPos + 1);
+                    float interpolated = s0 + frac * (s1 - s0);
+
+                    if (trk.buffer.getNumChannels() > 1)
                     {
-                        int sCh = ch % trk.buffer.getNumChannels();
-                        float s0 = trk.buffer.getSample (sCh, rPos);
-                        float s1 = trk.buffer.getSample (sCh, rPos + 1);
-                        float interpolated = s0 + frac * (s1 - s0);
+                        float s0_R = trk.buffer.getSample (1, rPos);
+                        float s1_R = trk.buffer.getSample (1, rPos + 1);
+                        interpolated = (interpolated + (s0_R + frac * (s1_R - s0_R))) * 0.5f;
+                    }
 
-                        if (!std::isnan(interpolated) && !std::isinf(interpolated))
-                            buffer.addSample (ch, s, interpolated * finalGain);
+                    if (!std::isnan(interpolated) && !std::isinf(interpolated))
+                    {
+                        float val = interpolated * finalGain;
+                        buffer.addSample (0, s, val * v.panL);
+                        buffer.addSample (1, s, val * v.panR);
                     }
                     v.playheadPosition += (v.isReverse ? -v.speedRatio : v.speedRatio);
                 }
