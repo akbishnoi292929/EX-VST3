@@ -6,7 +6,7 @@
 
 struct FlipStep
 {
-    int trackIdx = 0;       // 0, 1, or 2
+    int trackIdx = 0;
     int sliceIdx = 0;
     int pitchOffset = 0;
     float velocity = 1.0f;
@@ -30,7 +30,7 @@ struct AudioLayerTrack
     std::vector<int> sliceMarkers;
     int sourceBpm = 120;
     int sourceKey = 0;
-    int sourceScaleMode = 0; // 0: Minor, 1: Major
+    int sourceScaleMode = 0;
     float volume = 1.0f;
     bool isMute = false;
     bool hasAudio = false;
@@ -71,8 +71,7 @@ public:
     void setSlicePosition (int layerIndex, int markerIndex, int newSamplePosition);
     void clearLayer (int layerIndex);
 
-    // Multi-Agent Harmony Director AI Synthesis
-    void runCoordinatedAiGeneration();
+    void rollDiceAndGenerateMasterPattern();
     void renderMasterPreviewBuffer();
 
     juce::File exportCurrentAsAudioWav();
@@ -102,7 +101,7 @@ private:
     void runAdvancedAiAudioAnalysis (int layerIdx);
 
     AudioLayerTrack tracks[3];
-    juce::AudioSampleBuffer masterPreviewBuffer; // Layer 4: Final AI Composite Preview
+    juce::AudioSampleBuffer masterPreviewBuffer;
     std::vector<FlipStep> patternSteps;
 
     std::atomic<bool> isPlayingPattern { false };
@@ -117,10 +116,8 @@ private:
     bool isVoiceActive = false;
     bool currentStepReverse = false;
 
-    // Boundary Anti-Click Envelope Tracker
     float declickFadeGain = 0.0f;
 
-    // DSP Units
     juce::dsp::Reverb reverb;
     juce::dsp::Reverb::Parameters reverbParams;
     juce::dsp::StateVariableTPTFilter<float> filter;
