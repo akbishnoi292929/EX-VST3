@@ -72,6 +72,7 @@ public:
     void clearLayer (int layerIndex);
 
     void rollDiceAndGenerateMasterPattern();
+    void runCoordinatedAiGeneration();
     void renderMasterPreviewBuffer();
 
     juce::File exportCurrentAsAudioWav();
