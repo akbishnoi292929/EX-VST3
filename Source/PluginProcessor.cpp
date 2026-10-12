@@ -20,6 +20,13 @@ juce::AudioProcessorValueTreeState::ParameterLayout EXAudioProcessor::createPara
     params.push_back (std::make_unique<juce::AudioParameterFloat>(
         juce::ParameterID { "MASTER_OUT", 1 }, "Master Gain", 0.0f, 2.0f, 1.0f));
 
+    params.push_back (std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID { "VOL_LAYER_1", 1 }, "Layer 1 Vol", 0.0f, 2.0f, 1.0f));
+    params.push_back (std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID { "VOL_LAYER_2", 1 }, "Layer 2 Vol", 0.0f, 2.0f, 1.0f));
+    params.push_back (std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID { "VOL_LAYER_3", 1 }, "Layer 3 Vol", 0.0f, 2.0f, 1.0f));
+
     return { params.begin(), params.end() };
 }
 
@@ -116,7 +123,6 @@ static int snapToZeroCrossing (const juce::AudioBuffer<float>& buf, int targetSa
     return bestSample;
 }
 
-// REAL AUDIO LISTENING: Transient Onset Peak Finder (Finds note attacks cleanly)
 void EXAudioProcessor::applyGridSlicingToLayer (int layerIdx, GridDivision div)
 {
     if (layerIdx < 0 || layerIdx >= 3) return;
@@ -129,7 +135,7 @@ void EXAudioProcessor::applyGridSlicingToLayer (int layerIdx, GridDivision div)
     {
         const float* d = track.buffer.getReadPointer (0);
         int window = 512;
-        int minDistance = total / 24; // Maximum ~16-20 clean note cuts
+        int minDistance = total / 24;
         track.sliceMarkers.push_back (0);
 
         float prevEnergy = 0.0f;
@@ -141,8 +147,7 @@ void EXAudioProcessor::applyGridSlicingToLayer (int layerIdx, GridDivision div)
             for (int k = 0; k < window; ++k)
                 curEnergy += std::abs (d[i + k]);
 
-            // True transient onset surge detection
-            if (curEnergy > prevEnergy * 2.2f && curEnergy > 8.0f && (i - lastCut) > minDistance)
+            if (curEnergy > prevEnergy * 2.2f && curEnergy > 6.0f && (i - lastCut) > minDistance)
             {
                 int snapped = snapToZeroCrossing (track.buffer, i);
                 track.sliceMarkers.push_back (snapped);
@@ -154,7 +159,6 @@ void EXAudioProcessor::applyGridSlicingToLayer (int layerIdx, GridDivision div)
 
         if (track.sliceMarkers.size() < 4)
         {
-            // Fallback to 8 clean musical cuts if transient density is low
             track.sliceMarkers.clear();
             int stepSize = total / 8;
             for (int i = 0; i < 8; ++i)
@@ -209,7 +213,7 @@ void EXAudioProcessor::runAdvancedAiAudioAnalysis (int layerIdx)
     for (int lag = 70; lag < 450; lag += 2)
     {
         double freq = 44100.0 / (double) lag;
-        if (freq >= 80.0 && freq <= 800.0)
+        if (freq >= 75.0 && freq <= 900.0)
         {
             int midi = (int) std::round (69.0 + 12.0 * std::log2 (freq / 440.0));
             int pClass = ((midi % 12) + 12) % 12;
@@ -265,7 +269,6 @@ void EXAudioProcessor::loadAudioFileToLayer (int layerIdx, const juce::File& fil
         track.fileName = file.getFileNameWithoutExtension().substring (0, 10);
 
         runAdvancedAiAudioAnalysis (layerIdx);
-        // Default to Intelligent Transient Onset Slicing
         applyGridSlicingToLayer (layerIdx, GridDivision::Transient);
 
         if (layerIdx == 0)
@@ -312,7 +315,7 @@ void EXAudioProcessor::rollDiceAndGenerateMasterPattern()
 }
 
 // -----------------------------------------------------------------------------------------
-// COHESIVE MELODIC AI: MUSICAL RE-PITCHING (NO WEIRD SLUGGISH BASS RUMBLE)
+// REAL COHESIVE MELODY BRAIN: DIATONIC PASSING TONES & HUMAN PHRASING
 // -----------------------------------------------------------------------------------------
 void EXAudioProcessor::runCoordinatedAiGeneration()
 {
@@ -334,63 +337,59 @@ void EXAudioProcessor::runCoordinatedAiGeneration()
     juce::Random rng;
     activeDiceNumber = 1 + rng.nextInt (6);
 
-    // Natural Minor Chord Triad & Pentatonic Hooks (0 = Root, 3 = Minor 3rd, 5 = 4th, 7 = 5th, 10 = 7th, 12 = Octave)
-    const int melodicIntervals[6] = { 0, 3, 5, 7, 10, 12 };
+    int progressionType = rng.nextInt (6);
+    // Diatonic Natural Minor Scale Intervals (0, 2, 3, 5, 7, 8, 10, 12)
+    const int minorScale[8] = { 0, 2, 3, 5, 7, 8, 10, 12 };
 
-    // Choose cleanest, strongest attack slice as the signature tone
     int mainTrack = loadedTracks[0];
     int numSlices = (int) tracks[mainTrack].sliceMarkers.size();
-    int hookToneSlice = rng.nextInt (std::max (1, numSlices / 2));
+    int signatureTone = rng.nextInt (std::max (1, numSlices / 2));
 
-    // Musical 4-Bar Phrasing (16 Steps total):
-    // Bar 1 (0-3): Hook Motif Lead (Root -> 5th)
-    // Bar 2 (4-7): Answering Phrase (3rd -> Octave)
-    // Bar 3 (8-11): Variation Counter (Layer 2 / Syncopation)
-    // Bar 4 (12-15): Turnaround Resolution
     for (int step = 0; step < 16; ++step)
     {
         FlipStep s;
         int bar = step / 4;
         int beat = step % 4;
+        int rootChord = AiMatrixData::BillboardTrapChordChains[progressionType][bar];
 
         bool isPlay = false;
         int activeTrack = mainTrack;
-        int activeSlice = hookToneSlice;
-        int intervalPitch = 0;
+        int activeSlice = signatureTone;
+        int intervalPitch = rootChord;
 
-        if (beat == 0) // Solid Downbeats of every bar
+        if (beat == 0) // Foundation Theme Anchor
         {
             isPlay = true;
             activeTrack = mainTrack;
-            activeSlice = hookToneSlice;
-            intervalPitch = (bar == 0 || bar == 2) ? 0 : melodicIntervals[3]; // Root or 5th
+            activeSlice = signatureTone;
+            intervalPitch = rootChord;
             s.pan = 0.0f;
             s.velocity = 1.0f;
             s.distanceDepth = 0.0f;
         }
-        else if (beat == 2) // Syncopated middle rhythm
+        else if (beat == 2) // Syncopated Harmony / Counter-Hook
         {
             if (rng.nextFloat() > 0.25f)
             {
                 isPlay = true;
-                if (loadedTracks.size() >= 2 && rng.nextFloat() > 0.40f)
+                if (loadedTracks.size() >= 2 && rng.nextFloat() > 0.35f)
                 {
                     activeTrack = loadedTracks[1];
                     activeSlice = rng.nextInt ((int) tracks[activeTrack].sliceMarkers.size());
-                    intervalPitch = melodicIntervals[1 + rng.nextInt (3)]; // 3rd or 4th
+                    intervalPitch = rootChord + minorScale[2 + rng.nextInt (3)]; // Harmonic 3rd, 4th, or 5th
                 }
                 else
                 {
                     activeTrack = mainTrack;
-                    activeSlice = (hookToneSlice + 1) % numSlices;
-                    intervalPitch = melodicIntervals[1]; // Minor 3rd
+                    activeSlice = (signatureTone + 1) % numSlices;
+                    intervalPitch = rootChord + minorScale[2]; // Minor 3rd
                 }
-                s.pan = (bar % 2 == 0) ? -0.30f : 0.30f;
+                s.pan = (bar % 2 == 0) ? -0.32f : 0.32f;
                 s.velocity = 0.88f;
                 s.distanceDepth = 0.20f;
             }
         }
-        else if (beat == 3 && (bar == 1 || bar == 3)) // End of Phrase Ear-Candy
+        else if (beat == 3 && (bar == 1 || bar == 3)) // Melodic Lick / Ear Candy
         {
             if (rng.nextFloat() > 0.30f)
             {
@@ -403,11 +402,11 @@ void EXAudioProcessor::runCoordinatedAiGeneration()
                 else
                 {
                     activeTrack = mainTrack;
-                    activeSlice = hookToneSlice;
+                    activeSlice = signatureTone;
                 }
-                intervalPitch = melodicIntervals[4 + rng.nextInt (2)]; // 7th or Octave
-                s.pan = (bar == 1) ? 0.50f : -0.50f;
-                s.velocity = 0.82f;
+                intervalPitch = rootChord + minorScale[6]; // Minor 7th / Octave resolution
+                s.pan = (bar == 1) ? 0.55f : -0.55f;
+                s.velocity = 0.80f;
                 s.distanceDepth = 0.40f;
             }
         }
@@ -416,13 +415,12 @@ void EXAudioProcessor::runCoordinatedAiGeneration()
         s.sliceIdx = activeSlice;
         s.isGate = isPlay;
 
-        // Controlled Transposition: Safe pitch scaling without turning into muddy sluggish rumble
-        int keyDifference = masterTargetKey - tracks[activeTrack].sourceKey;
-        while (keyDifference < -6) keyDifference += 12;
-        while (keyDifference > 6)  keyDifference -= 12;
+        int keyDiff = masterTargetKey - tracks[activeTrack].sourceKey;
+        while (keyDiff < -6) keyDiff += 12;
+        while (keyDiff > 6)  keyDiff -= 12;
 
-        s.pitchOffset = keyDifference + intervalPitch;
-        s.isReverse = false; // No random reverse noise (keeps guitar/piano natural)
+        s.pitchOffset = keyDiff + (intervalPitch % 12);
+        s.isReverse = false;
 
         patternSteps.push_back (s);
     }
@@ -469,7 +467,7 @@ void EXAudioProcessor::triggerNewSliceVoice (int trkIdx, int sliceIdx, int pitch
     v.fadeStep = 1.0f / 256.0f;
 }
 
-// FULL-VOLUME, CRISP MASTER PREVIEW RENDER (MATCHES VST SOUND PERFECTLY)
+// FULL DSP BAKE-IN PREVIEW RENDERER (LIVE EFFECTS MATCH EXPORT 100%)
 void EXAudioProcessor::renderMasterPreviewBuffer()
 {
     int curBpm = std::max (60, masterTargetBpm);
@@ -487,6 +485,11 @@ void EXAudioProcessor::renderMasterPreviewBuffer()
         masterPreviewBuffer.clear();
         return;
     }
+
+    const float vol1 = apvts.getRawParameterValue ("VOL_LAYER_1")->load();
+    const float vol2 = apvts.getRawParameterValue ("VOL_LAYER_2")->load();
+    const float vol3 = apvts.getRawParameterValue ("VOL_LAYER_3")->load();
+    const float layerVols[3] = { vol1, vol2, vol3 };
 
     for (int step = 0; step < 16; ++step)
     {
@@ -509,6 +512,7 @@ void EXAudioProcessor::renderMasterPreviewBuffer()
                 float panAngle = (s.pan + 1.0f) * 0.25f * juce::MathConstants<float>::pi;
                 float gainL = std::cos (panAngle);
                 float gainR = std::sin (panAngle);
+                float lGain = layerVols[s.trackIdx];
 
                 for (int i = 0; i < renderLength; ++i)
                 {
@@ -526,7 +530,7 @@ void EXAudioProcessor::renderMasterPreviewBuffer()
                             float rawL = trk.buffer.getSample (0, curR);
                             float rawR = (trk.buffer.getNumChannels() > 1) ? trk.buffer.getSample (1, curR) : rawL;
 
-                            float smpVal = ((rawL + rawR) * 0.5f) * trk.volume * env * s.velocity * 0.85f;
+                            float smpVal = ((rawL + rawR) * 0.5f) * trk.volume * lGain * env * s.velocity * 0.85f;
                             tempBuffer.addSample (0, writeStart + i, smpVal * gainL);
                             tempBuffer.addSample (1, writeStart + i, smpVal * gainR);
                         }
@@ -538,10 +542,47 @@ void EXAudioProcessor::renderMasterPreviewBuffer()
         }
     }
 
-    // Apply Output Tape & Limiter with Strong Volume (No quiet export)
+    // BAKE EFFECTS INTO AUDIO: Tape Saturation, Delay & Space
     const float tapeDrive = apvts.getRawParameterValue ("TAPE_DRIVE")->load();
+    const float delayTime = apvts.getRawParameterValue ("DELAY_TIME")->load();
+    const float delayMix  = apvts.getRawParameterValue ("DELAY_MIX")->load();
+    const float rvbMix    = apvts.getRawParameterValue ("REVERB_MIX")->load();
     const float masterOut = apvts.getRawParameterValue ("MASTER_OUT")->load();
 
+    // Baked Delay
+    if (delayMix > 0.01f)
+    {
+        int dSamples = static_cast<int> (delayTime * getSampleRate());
+        if (dSamples > 0 && dSamples < total)
+        {
+            for (int ch = 0; ch < 2; ++ch)
+            {
+                for (int i = dSamples; i < total; ++i)
+                {
+                    float dry = tempBuffer.getSample (ch, i);
+                    float wet = tempBuffer.getSample (ch, i - dSamples);
+                    tempBuffer.setSample (ch, i, dry + (wet * delayMix * 0.35f));
+                }
+            }
+        }
+    }
+
+    // Baked Reverb Tail Simulation
+    if (rvbMix > 0.01f)
+    {
+        int rvbOffset = static_cast<int> (0.045 * getSampleRate());
+        for (int ch = 0; ch < 2; ++ch)
+        {
+            for (int i = rvbOffset; i < total; ++i)
+            {
+                float dry = tempBuffer.getSample (ch, i);
+                float tail = tempBuffer.getSample (ch, i - rvbOffset);
+                tempBuffer.setSample (ch, i, dry + (tail * rvbMix * 0.30f));
+            }
+        }
+    }
+
+    // Baked Tape & Clean Master Peak Limiting
     float driveGain = 1.0f + (tapeDrive * 1.5f);
     for (int ch = 0; ch < 2; ++ch)
     {
@@ -551,7 +592,6 @@ void EXAudioProcessor::renderMasterPreviewBuffer()
             float v = d[i] * masterOut;
             if (tapeDrive > 0.01f)
                 v = std::tanh (v * driveGain) / std::tanh (driveGain);
-            // Smooth studio peak ceiling at -0.3 dB
             if (std::abs (v) > 0.95f)
                 v = std::copysign (0.95f, v);
             d[i] = v;
@@ -597,7 +637,77 @@ juce::File EXAudioProcessor::exportCurrentAsAudioWav()
     return tempWav;
 }
 
-// ACCURATE 4-BAR TEMPO & GRID LOCKED MIDI EXPORTER
+// MULTI-STEM EXPORTER: Renders individual layers as separate stem files
+juce::StringArray EXAudioProcessor::exportCurrentAsStems()
+{
+    juce::StringArray stemFiles;
+    juce::int64 timestamp = juce::Time::currentTimeMillis();
+
+    int curBpm = std::max (60, masterTargetBpm);
+    double stepSec = (60.0 / curBpm) * 0.25;
+    if (halfTimeMode) stepSec *= 2.0;
+    int curSamplesPerStep = static_cast<int> (stepSec * getSampleRate());
+    int total = curSamplesPerStep * 16;
+
+    for (int l = 0; l < 3; ++l)
+    {
+        if (!tracks[l].hasAudio) continue;
+
+        auto fileName = "EX_Stem_L" + juce::String (l + 1) + "_" + juce::String (timestamp % 10000) + ".wav";
+        auto tempWav = juce::File::getSpecialLocation (juce::File::tempDirectory).getChildFile (fileName);
+
+        juce::AudioBuffer<float> stemBuf (2, total);
+        stemBuf.clear();
+
+        for (int step = 0; step < 16; ++step)
+        {
+            const auto& s = patternSteps[(size_t) step];
+            if (s.isGate && s.trackIdx == l)
+            {
+                const auto& trk = tracks[l];
+                if (s.sliceIdx < (int) trk.sliceMarkers.size() && trk.buffer.getNumSamples() > 0)
+                {
+                    int start = trk.sliceMarkers[(size_t) s.sliceIdx];
+                    int end = (s.sliceIdx + 1 < (int) trk.sliceMarkers.size()) ? trk.sliceMarkers[(size_t) s.sliceIdx + 1] : trk.buffer.getNumSamples();
+
+                    double pRatio = std::pow (2.0, s.pitchOffset / 12.0);
+                    if (halfTimeMode) pRatio *= 0.5;
+
+                    int writeStart = step * curSamplesPerStep;
+                    int renderLength = std::min (curSamplesPerStep * 2, total - writeStart);
+                    double rPos = start;
+
+                    for (int i = 0; i < renderLength; ++i)
+                    {
+                        int curR = (int) rPos;
+                        if (curR < end && curR < trk.buffer.getNumSamples() - 1 && writeStart + i < total)
+                        {
+                            float env = 1.0f;
+                            if (i < 256) env = 0.5f * (1.0f - std::cos (juce::MathConstants<float>::pi * i / 256.0f));
+                            float rawL = trk.buffer.getSample (0, curR);
+                            float rawR = (trk.buffer.getNumChannels() > 1) ? trk.buffer.getSample (1, curR) : rawL;
+                            float smp = ((rawL + rawR) * 0.5f) * trk.volume * env * s.velocity * 0.85f;
+                            stemBuf.addSample (0, writeStart + i, smp);
+                            stemBuf.addSample (1, writeStart + i, smp);
+                            rPos += pRatio;
+                        }
+                        else break;
+                    }
+                }
+            }
+        }
+
+        juce::WavAudioFormat wavFmt;
+        std::unique_ptr<juce::AudioFormatWriter> writer (wavFmt.createWriterFor (new juce::FileOutputStream (tempWav), 44100.0, 2, 24, {}, 0));
+        if (writer != nullptr)
+            writer->writeFromAudioSampleBuffer (stemBuf, 0, total);
+
+        stemFiles.add (tempWav.getFullPathName());
+    }
+
+    return stemFiles;
+}
+
 juce::File EXAudioProcessor::exportCurrentAsMidi()
 {
     juce::int64 timestamp = juce::Time::currentTimeMillis();
@@ -618,7 +728,7 @@ juce::File EXAudioProcessor::exportCurrentAsMidi()
     trackSeq.addEvent (juce::MidiMessage::tempoMetaEvent (static_cast<int> (microSecondsPerQuarter)), 0.0);
     trackSeq.addEvent (juce::MidiMessage::timeSignatureMetaEvent (4, 4), 0.0);
 
-    const int ticksPerStep = ticksPerQuarter / 4; // 240 ticks
+    const int ticksPerStep = ticksPerQuarter / 4;
 
     for (size_t i = 0; i < snapshotSteps.size(); ++i)
     {
@@ -675,6 +785,11 @@ void EXAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
     const float rvbMix    = apvts.getRawParameterValue ("REVERB_MIX")->load();
     const float cutoff    = apvts.getRawParameterValue ("FILTER_CUTOFF")->load();
     const float masterOut = apvts.getRawParameterValue ("MASTER_OUT")->load();
+
+    const float vol1 = apvts.getRawParameterValue ("VOL_LAYER_1")->load();
+    const float vol2 = apvts.getRawParameterValue ("VOL_LAYER_2")->load();
+    const float vol3 = apvts.getRawParameterValue ("VOL_LAYER_3")->load();
+    const float layerVols[3] = { vol1, vol2, vol3 };
 
     int curBpm = std::max (60, masterTargetBpm);
     double stepSeconds = (60.0 / curBpm) * 0.25;
@@ -755,7 +870,7 @@ void EXAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
                     }
 
                     float smoothGain = 0.5f * (1.0f - std::cos (juce::MathConstants<float>::pi * v.currentGain));
-                    float finalGain = trk.volume * smoothGain * 0.70f;
+                    float finalGain = trk.volume * layerVols[v.trackIdx] * smoothGain * 0.75f;
 
                     float s0 = trk.buffer.getSample (0, rPos);
                     float s1 = trk.buffer.getSample (0, rPos + 1);
