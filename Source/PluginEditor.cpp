@@ -7,7 +7,7 @@ void LuxuryHardwareKnobLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, 
                                                       float sliderPos, float rotaryStartAngle,
                                                       float rotaryEndAngle, juce::Slider&)
 {
-    auto radius = (float) juce::jmin (width / 2, height / 2) - 3.0f;
+    auto radius = (float) juce::jmin (width / 2, height / 2) - 2.5f;
     auto centreX = (float) x + (float) width * 0.5f;
     auto centreY = (float) y + (float) height * 0.5f;
     auto angle = rotaryStartAngle + sliderPos * (rotaryEndAngle - rotaryStartAngle);
@@ -19,12 +19,12 @@ void LuxuryHardwareKnobLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, 
     juce::Path trackPath;
     trackPath.addCentredArc (centreX, centreY, trackR, trackR, 0.0f, rotaryStartAngle, rotaryEndAngle, true);
     g.setColour (juce::Colour (0xff2b2d35));
-    g.strokePath (trackPath, juce::PathStrokeType (2.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    g.strokePath (trackPath, juce::PathStrokeType (2.2f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 
     juce::Path activePath;
     activePath.addCentredArc (centreX, centreY, trackR, trackR, 0.0f, rotaryStartAngle, angle, true);
     g.setColour (juce::Colour (0xffe63946));
-    g.strokePath (activePath, juce::PathStrokeType (2.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    g.strokePath (activePath, juce::PathStrokeType (2.2f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
 
     float capR = radius * 0.72f;
     juce::ColourGradient grad (juce::Colour (0xff2d3038), centreX, centreY - capR,
@@ -33,7 +33,7 @@ void LuxuryHardwareKnobLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, 
     g.fillEllipse (centreX - capR, centreY - capR, capR * 2.0f, capR * 2.0f);
 
     g.setColour (juce::Colour (0x33ffffff));
-    g.drawEllipse (centreX - capR, centreY - capR, capR * 2.0f, capR * 2.0f, 1.2f);
+    g.drawEllipse (centreX - capR, centreY - capR, capR * 2.0f, capR * 2.0f, 1.0f);
 
     juce::Path p;
     auto pointerLen = capR * 0.75f;
@@ -47,13 +47,13 @@ void EXAudioProcessorEditor::setupHardwareKnob (juce::Slider& s, juce::Label& l,
 {
     s.setLookAndFeel (&luxuryKnobLAF);
     s.setSliderStyle (juce::Slider::RotaryVerticalDrag);
-    s.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 55, 14);
+    s.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 50, 13);
     s.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
     s.setColour (juce::Slider::textBoxTextColourId, juce::Colour (0xff22252a));
     addAndMakeVisible (s);
 
     l.setText (name, juce::dontSendNotification);
-    l.setFont (juce::Font (10.0f, juce::Font::bold));
+    l.setFont (juce::Font (9.5f, juce::Font::bold));
     l.setJustificationType (juce::Justification::centred);
     l.setColour (juce::Label::textColourId, juce::Colour (0xff555862));
     addAndMakeVisible (l);
@@ -95,7 +95,7 @@ void EXAudioProcessorEditor::drawRealistic3DCubeDice (juce::Graphics& g, float c
     if (audioProcessor.isDiceRolling.load())
     {
         rollAngle = audioProcessor.diceRollProgress * juce::MathConstants<float>::twoPi * 4.0f;
-        wobble = std::sin (audioProcessor.diceRollProgress * juce::MathConstants<float>::pi * 6.0f) * 6.0f;
+        wobble = std::sin (audioProcessor.diceRollProgress * juce::MathConstants<float>::pi * 6.0f) * 5.0f;
     }
 
     g.setColour (juce::Colour (0x55000000));
@@ -134,7 +134,7 @@ void EXAudioProcessorEditor::drawRealistic3DCubeDice (juce::Graphics& g, float c
     g.fillPath (rightFace);
 
     g.setColour (juce::Colour (0x44ffffff));
-    g.strokePath (topFace, juce::PathStrokeType (1.5f));
+    g.strokePath (topFace, juce::PathStrokeType (1.2f));
     g.strokePath (leftFace, juce::PathStrokeType (1.0f));
     g.strokePath (rightFace, juce::PathStrokeType (1.0f));
 
@@ -176,12 +176,12 @@ EXAudioProcessorEditor::EXAudioProcessorEditor (EXAudioProcessor& p)
     setWantsKeyboardFocus (true);
 
     brandTitle.setText ("EX", juce::dontSendNotification);
-    brandTitle.setFont (juce::Font (30.0f, juce::Font::bold));
+    brandTitle.setFont (juce::Font (26.0f, juce::Font::bold));
     brandTitle.setColour (juce::Label::textColourId, juce::Colour (0xff9e1e1e));
     addAndMakeVisible (brandTitle);
 
-    subTitle.setText ("HEARTLESS SAMPLE FLIPPER // PRO 4-LAYER WORKSTATION", juce::dontSendNotification);
-    subTitle.setFont (juce::Font (11.5f, juce::Font::bold));
+    subTitle.setText ("HEARTLESS SAMPLE FLIPPER // PRO WORKSTATION", juce::dontSendNotification);
+    subTitle.setFont (juce::Font (11.0f, juce::Font::bold));
     subTitle.setColour (juce::Label::textColourId, juce::Colour (0xff63666f));
     addAndMakeVisible (subTitle);
 
@@ -210,7 +210,7 @@ EXAudioProcessorEditor::EXAudioProcessorEditor (EXAudioProcessor& p)
 
         ui.bpmSlider.setRange (60, 200, 1);
         ui.bpmSlider.setValue (audioProcessor.getTrack (i).sourceBpm, juce::dontSendNotification);
-        ui.bpmSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false, 42, 22);
+        ui.bpmSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false, 40, 20);
         ui.bpmSlider.setColour (juce::Slider::textBoxTextColourId, juce::Colour (0xff2b2b2b));
         ui.bpmSlider.onValueChange = [this, i]() {
             audioProcessor.getTrack (i).sourceBpm = (int) layerUIs[i].bpmSlider.getValue();
@@ -283,7 +283,7 @@ EXAudioProcessorEditor::EXAudioProcessorEditor (EXAudioProcessor& p)
     addAndMakeVisible (exportStemsBtn);
 
     masterTargetTitle.setText ("MASTER TARGET", juce::dontSendNotification);
-    masterTargetTitle.setFont (juce::Font (12.0f, juce::Font::bold));
+    masterTargetTitle.setFont (juce::Font (11.5f, juce::Font::bold));
     masterTargetTitle.setColour (juce::Label::textColourId, juce::Colour (0xff1b633b));
     addAndMakeVisible (masterTargetTitle);
 
@@ -302,7 +302,7 @@ EXAudioProcessorEditor::EXAudioProcessorEditor (EXAudioProcessor& p)
 
     masterBpmSlider.setRange (60, 200, 1);
     masterBpmSlider.setValue (audioProcessor.masterTargetBpm, juce::dontSendNotification);
-    masterBpmSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false, 44, 22);
+    masterBpmSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false, 42, 22);
     masterBpmSlider.setColour (juce::Slider::textBoxTextColourId, juce::Colour (0xff2b2b2b));
     masterBpmSlider.onValueChange = [this]() {
         audioProcessor.masterTargetBpm = (int) masterBpmSlider.getValue();
@@ -378,8 +378,8 @@ EXAudioProcessorEditor::EXAudioProcessorEditor (EXAudioProcessor& p)
     filterAtt    = std::make_unique<Attachment> (audioProcessor.apvts, "FILTER_CUTOFF", filterCutoffKnob);
     masterAtt    = std::make_unique<Attachment> (audioProcessor.apvts, "MASTER_OUT", masterOutKnob);
 
-    // WIDE PRO RESOLUTION: 1100 x 740 for large, comfortable precision editing
-    setSize (1100, 740);
+    // Optimized widescreen workspace
+    setSize (1140, 760);
     startTimerHz (40);
 }
 
@@ -470,11 +470,11 @@ void EXAudioProcessorEditor::mouseDown (const juce::MouseEvent& e)
             float clickX = e.position.x - area.getX();
             float samplePerPx = (float) trk.buffer.getNumSamples() / area.getWidth();
 
-            // Wide grab tolerance (10 pixels) for comfortable mouse grabbing
+            // Broad grab tolerance (12 pixels) for immediate responsive click
             for (size_t m = 0; m < trk.sliceMarkers.size(); ++m)
             {
                 float markerPx = trk.sliceMarkers[m] / samplePerPx;
-                if (std::abs (clickX - markerPx) < 10.0f)
+                if (std::abs (clickX - markerPx) < 12.0f)
                 {
                     draggingLayerIdx = i;
                     draggingMarkerIdx = (int) m;
@@ -485,6 +485,7 @@ void EXAudioProcessorEditor::mouseDown (const juce::MouseEvent& e)
     }
 }
 
+// 60FPS BUTTERY SMOOTH MOUSE DRAG (Only updates visual position without audio freeze)
 void EXAudioProcessorEditor::mouseDrag (const juce::MouseEvent& e)
 {
     if (draggingLayerIdx >= 0 && draggingMarkerIdx >= 0)
@@ -495,49 +496,60 @@ void EXAudioProcessorEditor::mouseDrag (const juce::MouseEvent& e)
         {
             float curX = juce::jlimit (area.getX(), area.getRight(), e.position.x) - area.getX();
             float samplePerPx = (float) trk.buffer.getNumSamples() / area.getWidth();
-            audioProcessor.setSlicePosition (draggingLayerIdx, draggingMarkerIdx, (int) (curX * samplePerPx));
-            audioProcessor.renderMasterPreviewBuffer();
-            repaint();
+            int newSamplePos = static_cast<int> (curX * samplePerPx);
+
+            // Fast responsive move
+            trk.sliceMarkers[(size_t) draggingMarkerIdx] = juce::jlimit (0, trk.buffer.getNumSamples() - 1, newSamplePos);
+            std::sort (trk.sliceMarkers.begin(), trk.sliceMarkers.end());
+
+            repaint(); // Instant 60fps graphical redraw without recalculating heavy DSP
         }
     }
 }
 
+// TRIGGER RE-RENDER ONLY WHEN MOUSE IS RELEASED (Kills all drag stuttering!)
 void EXAudioProcessorEditor::mouseUp (const juce::MouseEvent&)
 {
+    if (draggingLayerIdx >= 0 && draggingMarkerIdx >= 0)
+    {
+        audioProcessor.renderMasterPreviewBuffer();
+    }
     draggingLayerIdx = -1;
     draggingMarkerIdx = -1;
 }
 
 void EXAudioProcessorEditor::paint (juce::Graphics& g)
 {
-    g.fillAll (juce::Colour (0xff4a2c18));
+    g.fillAll (juce::Colour (0xff3d2212)); // Deep Walnut Frame
 
-    auto body = getLocalBounds().reduced (14, 10).toFloat();
+    auto body = getLocalBounds().reduced (12, 10).toFloat();
     g.setColour (juce::Colour (0xffece9e1));
     g.fillRoundedRectangle (body, 6.0f);
 
     g.setColour (juce::Colour (0xffcfcac0));
-    g.drawRoundedRectangle (body, 6.0f, 2.0f);
+    g.drawRoundedRectangle (body, 6.0f, 1.8f);
 
+    // Subtle corner studs
     g.setColour (juce::Colour (0xffa8a49c));
-    g.fillEllipse (20.0f, 16.0f, 7.0f, 7.0f);
-    g.fillEllipse (static_cast<float> (getWidth() - 27), 16.0f, 7.0f, 7.0f);
-    g.fillEllipse (20.0f, static_cast<float> (getHeight() - 23), 7.0f, 7.0f);
-    g.fillEllipse (static_cast<float> (getWidth() - 27), static_cast<float> (getHeight() - 23), 7.0f, 7.0f);
+    g.fillEllipse (18.0f, 14.0f, 6.0f, 6.0f);
+    g.fillEllipse (static_cast<float> (getWidth() - 24), 14.0f, 6.0f, 6.0f);
+    g.fillEllipse (18.0f, static_cast<float> (getHeight() - 20), 6.0f, 6.0f);
+    g.fillEllipse (static_cast<float> (getWidth() - 24), static_cast<float> (getHeight() - 20), 6.0f, 6.0f);
 
+    // COMPACT RADAR CENTER
     float cX = getWidth() * 0.5f;
-    float cY = 185.0f;
-    float r = 78.0f;
+    float cY = 115.0f;
+    float r = 58.0f;
     radarCircleArea = juce::Rectangle<float> (cX - r, cY - r, r * 2.0f, r * 2.0f);
 
     g.setColour (juce::Colour (0xffb8b4a8));
-    g.drawEllipse (cX - r - 4.0f, cY - r - 4.0f, (r + 4.0f) * 2.0f, (r + 4.0f) * 2.0f, 3.5f);
+    g.drawEllipse (cX - r - 3.0f, cY - r - 3.0f, (r + 3.0f) * 2.0f, (r + 3.0f) * 2.0f, 2.5f);
 
     g.setColour (juce::Colour (0xff3b0a0a));
     g.fillEllipse (cX - r, cY - r, r * 2.0f, r * 2.0f);
 
     g.setColour (juce::Colour (0x33cf3838));
-    for (float gR = 20.0f; gR < 80.0f; gR += 20.0f)
+    for (float gR = 15.0f; gR < 60.0f; gR += 15.0f)
         g.drawEllipse (cX - gR, cY - gR, gR * 2.0f, gR * 2.0f, 1.0f);
     g.drawLine (cX - r, cY, cX + r, cY, 1.0f);
     g.drawLine (cX, cY - r, cX, cY + r, 1.0f);
@@ -547,29 +559,31 @@ void EXAudioProcessorEditor::paint (juce::Graphics& g)
     g.setColour (juce::Colour (0x66ff3b30));
     g.drawLine (cX, cY, scanX, scanY, 1.5f);
 
-    drawRealistic3DCubeDice (g, cX, cY, 52.0f);
+    drawRealistic3DCubeDice (g, cX, cY, 44.0f);
 
+    // SLENDER TOP KNOB PANELS
     g.setColour (juce::Colour (0xffe2dfd4));
-    auto leftBox = juce::Rectangle<float> (40.0f, 65.0f, 275.0f, 240.0f);
-    auto rightBox = juce::Rectangle<float> (static_cast<float> (getWidth() - 315), 65.0f, 275.0f, 240.0f);
+    auto leftBox = juce::Rectangle<float> (35.0f, 48.0f, 320.0f, 140.0f);
+    auto rightBox = juce::Rectangle<float> (static_cast<float> (getWidth() - 355), 48.0f, 320.0f, 140.0f);
     g.fillRoundedRectangle (leftBox, 4.0f);
     g.fillRoundedRectangle (rightBox, 4.0f);
     g.setColour (juce::Colour (0xffcfcac0));
     g.drawRoundedRectangle (leftBox, 4.0f, 1.0f);
     g.drawRoundedRectangle (rightBox, 4.0f, 1.0f);
 
-    auto lowerBar = juce::Rectangle<float> (40.0f, 320.0f, static_cast<float> (getWidth() - 80), 380.0f);
+    // EXPANDED MASSIVE BOTTOM WORKSPACE
+    auto lowerBar = juce::Rectangle<float> (35.0f, 202.0f, static_cast<float> (getWidth() - 70), 530.0f);
     g.setColour (juce::Colour (0xffdfdbcf));
     g.fillRoundedRectangle (lowerBar, 4.0f);
     g.setColour (juce::Colour (0xffc4beb2));
     g.drawRoundedRectangle (lowerBar, 4.0f, 1.0f);
 
-    // Large, Readable Waveform Panels
+    // HUGE TALL WAVEFORM PANELS
     for (int i = 0; i < 3; ++i)
     {
         auto& ui = layerUIs[i];
         auto& trk = audioProcessor.getTrack (i);
-        g.setColour (juce::Colour (0xff1a1c22));
+        g.setColour (juce::Colour (0xff14151b));
         g.fillRoundedRectangle (ui.waveArea, 4.0f);
 
         if (trk.hasAudio && trk.buffer.getNumSamples() > 0)
@@ -587,7 +601,7 @@ void EXAudioProcessorEditor::paint (juce::Graphics& g)
                 sIdx = juce::jlimit (0, total - 1, sIdx);
                 float v = trk.buffer.getSample (0, sIdx);
                 if (!std::isnan(v) && !std::isinf(v))
-                    g.drawLine (ui.waveArea.getX() + x, mid - (v * 22.0f), ui.waveArea.getX() + x, mid + (v * 22.0f), 1.0f);
+                    g.drawLine (ui.waveArea.getX() + x, mid - (v * 32.0f), ui.waveArea.getX() + x, mid + (v * 32.0f), 1.0f);
             }
 
             for (int slice : trk.sliceMarkers)
@@ -595,20 +609,24 @@ void EXAudioProcessorEditor::paint (juce::Graphics& g)
                 float cutX = ui.waveArea.getX() + ((slice / (float) total) * w);
                 g.setColour (juce::Colours::white);
                 g.drawVerticalLine ((int) cutX, ui.waveArea.getY(), ui.waveArea.getBottom());
-                // Easy-to-grab Golden Marker Head
+
+                // Glowing Solid Gold Grab Handle on Top
                 g.setColour (juce::Colour (0xffffcc00));
-                g.fillEllipse (cutX - 3.5f, ui.waveArea.getY(), 7.0f, 7.0f);
+                g.fillEllipse (cutX - 4.5f, ui.waveArea.getY() - 1.0f, 9.0f, 9.0f);
+                g.setColour (juce::Colour (0xff000000));
+                g.drawEllipse (cutX - 4.5f, ui.waveArea.getY() - 1.0f, 9.0f, 9.0f, 1.0f);
             }
         }
         else
         {
-            g.setColour (juce::Colour (0xff656978));
-            g.setFont (12.0f);
-            g.drawText ("DROP AUDIO HERE", ui.waveArea.toNearestInt(), juce::Justification::centred);
+            g.setColour (juce::Colour (0xff585b68));
+            g.setFont (13.0f);
+            g.drawText ("DRAG & DROP SAMPLES HERE", ui.waveArea.toNearestInt(), juce::Justification::centred);
         }
     }
 
-    g.setColour (juce::Colour (0xff161324));
+    // Huge Master Preview Strip
+    g.setColour (juce::Colour (0xff120f1e));
     g.fillRoundedRectangle (previewWaveArea, 4.0f);
     g.setColour (juce::Colour (0x667b2cbf));
     g.drawRoundedRectangle (previewWaveArea, 4.0f, 1.2f);
@@ -627,7 +645,7 @@ void EXAudioProcessorEditor::paint (juce::Graphics& g)
             sIdx = juce::jlimit (0, total - 1, sIdx);
             float v = pBuf.getSample (0, sIdx);
             if (!std::isnan(v) && !std::isinf(v))
-                g.drawLine (previewWaveArea.getX() + x, mid - (v * 24.0f), previewWaveArea.getX() + x, mid + (v * 24.0f), 1.0f);
+                g.drawLine (previewWaveArea.getX() + x, mid - (v * 28.0f), previewWaveArea.getX() + x, mid + (v * 28.0f), 1.0f);
         }
     }
     else
@@ -640,73 +658,76 @@ void EXAudioProcessorEditor::paint (juce::Graphics& g)
 
 void EXAudioProcessorEditor::resized()
 {
-    brandTitle.setBounds (45, 14, 60, 32);
-    subTitle.setBounds (115, 22, 600, 20);
+    brandTitle.setBounds (40, 10, 50, 30);
+    subTitle.setBounds (95, 16, 500, 20);
 
-    delayTimeKnob.setBounds (60, 80, 76, 82);
-    delayTimeLabel.setBounds (60, 162, 76, 16);
-    delayMixKnob.setBounds (155, 80, 76, 82);
-    delayMixLabel.setBounds (155, 162, 76, 16);
+    // COMPACT TOP KNOBS SECTION (Saved 100+ Vertical Pixels!)
+    int leftK_X = 50;
+    int kSpacing = 72;
+    delayTimeKnob.setBounds (leftK_X, 56, 62, 66);
+    delayTimeLabel.setBounds (leftK_X, 122, 62, 14);
+    delayMixKnob.setBounds (leftK_X + kSpacing, 56, 62, 66);
+    delayMixLabel.setBounds (leftK_X + kSpacing, 122, 62, 14);
+    reverbSizeKnob.setBounds (leftK_X + kSpacing * 2, 56, 62, 66);
+    rvbSizeLabel.setBounds (leftK_X + kSpacing * 2, 122, 62, 14);
+    reverbMixKnob.setBounds (leftK_X + kSpacing * 3, 56, 62, 66);
+    rvbMixLabel.setBounds (leftK_X + kSpacing * 3, 122, 62, 14);
 
-    reverbSizeKnob.setBounds (60, 192, 76, 82);
-    rvbSizeLabel.setBounds (60, 274, 76, 16);
-    reverbMixKnob.setBounds (155, 192, 76, 82);
-    rvbMixLabel.setBounds (155, 274, 76, 16);
-
-    tapeDriveKnob.setBounds (getWidth() - 295, 80, 76, 82);
-    tapeLabel.setBounds (getWidth() - 295, 162, 76, 16);
-    filterCutoffKnob.setBounds (getWidth() - 200, 80, 76, 82);
-    filterLabel.setBounds (getWidth() - 200, 162, 76, 16);
-
-    masterOutKnob.setBounds (getWidth() - 248, 192, 76, 82);
-    masterLabel.setBounds (getWidth() - 248, 274, 76, 16);
+    int rightK_X = getWidth() - 340;
+    tapeDriveKnob.setBounds (rightK_X, 56, 62, 66);
+    tapeLabel.setBounds (rightK_X, 122, 62, 14);
+    filterCutoffKnob.setBounds (rightK_X + kSpacing, 56, 62, 66);
+    filterLabel.setBounds (rightK_X + kSpacing, 122, 62, 14);
+    masterOutKnob.setBounds (rightK_X + kSpacing * 2, 56, 62, 66);
+    masterLabel.setBounds (rightK_X + kSpacing * 2, 122, 62, 14);
 
     int cX = getWidth() / 2;
-    playPauseButton.setBounds (cX - 90, 278, 85, 32);
-    dragMidiButton.setBounds (cX + 5, 278, 85, 32);
+    playPauseButton.setBounds (cX - 88, 178, 84, 28);
+    dragMidiButton.setBounds (cX + 4, 178, 84, 28);
 
-    masterTargetTitle.setBounds (55, 334, 125, 20);
-    masterKeySelector.setBounds (185, 332, 68, 24);
-    masterModeSelector.setBounds (258, 332, 85, 24);
-    masterBpmSlider.setBounds (350, 332, 105, 24);
+    // MASTER TARGET CONTROL BAR
+    int targetY = 212;
+    masterTargetTitle.setBounds (48, targetY, 115, 24);
+    masterKeySelector.setBounds (168, targetY, 64, 24);
+    masterModeSelector.setBounds (238, targetY, 80, 24);
+    masterBpmSlider.setBounds (324, targetY, 95, 24);
+    halfTimeToggle.setBounds (430, targetY, 120, 24);
 
-    halfTimeToggle.setBounds (468, 332, 130, 24);
+    int gX = 570;
+    int gW = 42;
+    btnQuarter.setBounds (gX, targetY, gW, 24);
+    btnEighth.setBounds (gX + 46, targetY, gW, 24);
+    btnSixteenth.setBounds (gX + 92, targetY, gW, 24);
+    btnTriplet1_3.setBounds (gX + 138, targetY, gW + 6, 24);
+    btnTriplet1_6.setBounds (gX + 188, targetY, gW + 6, 24);
+    btnTransient.setBounds (gX + 238, targetY, 54, 24);
 
-    int gX = 615;
-    int gY = 332;
-    int gW = 44;
-    btnQuarter.setBounds (gX, gY, gW, 24);
-    btnEighth.setBounds (gX + 48, gY, gW, 24);
-    btnSixteenth.setBounds (gX + 96, gY, gW, 24);
-    btnTriplet1_3.setBounds (gX + 144, gY, gW + 6, 24);
-    btnTriplet1_6.setBounds (gX + 196, gY, gW + 6, 24);
-    btnTransient.setBounds (gX + 248, gY, 56, 24);
-
-    int startY = 372;
-    int slotH = 64; // Taller slot for big waveforms
+    // GIGANTIC EXPANDED LAYER WORKSPACE
+    int startY = 246;
+    int slotH = 105; // MASSIVE 105px per layer slot!
     for (int i = 0; i < 3; ++i)
     {
         auto& ui = layerUIs[i];
         int y = startY + (i * slotH);
 
-        ui.titleLabel.setBounds (55, y + 18, 58, 20);
-        ui.keySelector.setBounds (118, y + 18, 62, 24);
-        ui.modeSelector.setBounds (185, y + 18, 80, 24);
-        ui.bpmSlider.setBounds (270, y + 18, 82, 24);
+        ui.titleLabel.setBounds (48, y + 10, 56, 20);
+        ui.keySelector.setBounds (108, y + 10, 60, 22);
+        ui.modeSelector.setBounds (174, y + 10, 74, 22);
+        ui.bpmSlider.setBounds (254, y + 10, 78, 22);
 
-        ui.volSlider.setBounds (360, y + 10, 36, 36);
-        ui.volLabel.setBounds (360, y + 46, 36, 10);
+        ui.volSlider.setBounds (338, y + 6, 34, 34);
+        ui.volLabel.setBounds (338, y + 42, 34, 10);
 
-        ui.muteBtn.setBounds (405, y + 18, 24, 24);
-        ui.clearBtn.setBounds (433, y + 18, 24, 24);
+        ui.muteBtn.setBounds (378, y + 10, 22, 22);
+        ui.clearBtn.setBounds (404, y + 10, 22, 22);
 
-        // Huge, wide waveform area with lots of height (50px tall!)
-        ui.waveArea = juce::Rectangle<float> (468.0f, (float) (y + 6), (float) (getWidth() - 525), 50.0f);
+        // Huge 72px Tall Waveform Box with massive horizontal length
+        ui.waveArea = juce::Rectangle<float> (436.0f, (float) (y + 4), (float) (getWidth() - 485), 78.0f);
     }
 
     int masterY = startY + (3 * slotH) + 12;
-    previewTrackTitle.setBounds (55, masterY + 16, 95, 20);
-    directExportWavBtn.setBounds (158, masterY + 14, 105, 28);
-    exportStemsBtn.setBounds (268, masterY + 14, 105, 28);
-    previewWaveArea = juce::Rectangle<float> (385.0f, (float) masterY, (float) (getWidth() - 440), 54.0f);
+    previewTrackTitle.setBounds (48, masterY + 18, 90, 20);
+    directExportWavBtn.setBounds (144, masterY + 16, 100, 28);
+    exportStemsBtn.setBounds (250, masterY + 16, 100, 28);
+    previewWaveArea = juce::Rectangle<float> (360.0f, (float) masterY, (float) (getWidth() - 410), 62.0f);
 }
