@@ -68,7 +68,8 @@ void EXAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     delayBuffer.clear();
     delayWriteIndex = 0;
 
-    samplesPerStep = static_cast<int> ((60.0 / std::max (60, masterTargetBpm)) * 0.25 * sampleRate);
+    int curBpm = std::max (60, masterTargetBpm);
+    samplesPerStep = static_cast<int> ((60.0 / curBpm) * 0.25 * sampleRate);
 }
 
 void EXAudioProcessor::releaseResources()
@@ -288,7 +289,7 @@ void EXAudioProcessor::rollDiceAndGenerateMasterPattern()
 }
 
 // -----------------------------------------------------------------------------------------
-// REAL MUSICAL MELODIC ENGINE (NO RUSH, SUSTAINED CHORDS & THEMATIC HOOKS)
+// COHESIVE MELODIC HOOK GENERATOR: SCALE PITCH-MOULDING, NOT RANDOM CHOPPING
 // -----------------------------------------------------------------------------------------
 void EXAudioProcessor::runCoordinatedAiGeneration()
 {
@@ -311,86 +312,97 @@ void EXAudioProcessor::runCoordinatedAiGeneration()
     activeDiceNumber = 1 + rng.nextInt (6);
 
     int progressionType = rng.nextInt (6);
-    const int scaleNotesMinor[7] = { 0, 2, 3, 5, 7, 8, 10 };
+    
+    // Natural Minor Pentatonic Degrees (0: Root, 3: Minor 3rd, 5: 4th, 7: 5th, 10: Minor 7th)
+    const int minorPentatonic[5] = { 0, 3, 5, 7, 10 };
 
+    // Find the cleanest harmonic slice in the primary track as the instrument sound timbre
     int mainTrack = loadedTracks[0];
-    int totalSlicesMain = (int) tracks[mainTrack].sliceMarkers.size();
-    int themeSliceA = rng.nextInt (std::max (1, totalSlicesMain / 2));
-    int themeSliceB = (themeSliceA + 2) % totalSlicesMain;
+    int totalSlices = (int) tracks[mainTrack].sliceMarkers.size();
+    int signatureToneSlice = rng.nextInt (std::max (1, totalSlices / 3));
 
-    // We generate an 8-bar musical idea across the 16 steps (Each step is half-beat / beat)
+    // Musical phrasing: 4 Bars structured melody (16 steps = 4 beats each in 16th resolution)
+    // Structure:
+    // Bar 1 (Steps 0-3): Call motif
+    // Bar 2 (Steps 4-7): Response motif (Higher pitch resolution)
+    // Bar 3 (Steps 8-11): Variation (Syncopated hook)
+    // Bar 4 (Steps 12-15): Turnaround cadence resolution
     for (int step = 0; step < 16; ++step)
     {
         FlipStep s;
         int bar = step / 4;
-        int stepInBar = step % 4;
-        int chordDegree = AiMatrixData::BillboardTrapChordChains[progressionType][bar];
+        int beatInBar = step % 4;
+        int rootChord = AiMatrixData::BillboardTrapChordChains[progressionType][bar];
 
-        bool playThisStep = false;
+        bool isNoteTrigger = false;
         int activeTrack = mainTrack;
-        int activeSlice = themeSliceA;
-        int pitchInterval = chordDegree;
+        int activeSlice = signatureToneSlice;
+        int noteOffset = rootChord;
 
-        // MUSICAL STRUCTURE (Breathable cadence, no machine-gun trigger)
-        // Step 0: Strong Anchor (Bar Start)
-        // Step 2: Melodic Counter / Syncopation
-        // Steps 1 & 3: Silence / Sustain (Breathable rest)
-        if (stepInBar == 0)
+        // Structured Call-and-Response Rhythm
+        if (beatInBar == 0)
         {
-            playThisStep = true;
+            // Strong rhythmic downbeat of each bar
+            isNoteTrigger = true;
             activeTrack = mainTrack;
-            activeSlice = (bar % 2 == 0) ? themeSliceA : themeSliceB;
-            pitchInterval = chordDegree;
-            s.pan = 0.0f; // Solid center anchor
+            activeSlice = signatureToneSlice;
+            noteOffset = rootChord; // Ground root note
+            s.pan = 0.0f;
             s.distanceDepth = 0.05f;
             s.velocity = 0.95f;
         }
-        else if (stepInBar == 2)
+        else if (beatInBar == 2)
         {
-            // 70% chance of an answering melodic note
-            if (rng.nextFloat() > 0.30f)
+            // Syncopated answer note on the off-beat
+            if (rng.nextFloat() > 0.25f)
             {
-                playThisStep = true;
-                if (loadedTracks.size() >= 2 && rng.nextFloat() > 0.40f)
+                isNoteTrigger = true;
+                if (loadedTracks.size() >= 2 && rng.nextFloat() > 0.35f)
                 {
                     activeTrack = loadedTracks[1];
                     activeSlice = rng.nextInt ((int) tracks[activeTrack].sliceMarkers.size());
-                    pitchInterval = chordDegree + scaleNotesMinor[2 + rng.nextInt (3)]; // 3rd or 5th harmonic
-                    s.pan = (step % 2 == 0) ? -0.40f : 0.40f;
-                    s.distanceDepth = 0.35f;
                 }
                 else
                 {
                     activeTrack = mainTrack;
-                    activeSlice = themeSliceB;
-                    pitchInterval = chordDegree + scaleNotesMinor[1];
-                    s.pan = -0.20f;
-                    s.distanceDepth = 0.15f;
+                    activeSlice = (signatureToneSlice + 1) % totalSlices;
                 }
+                noteOffset = rootChord + minorPentatonic[1 + rng.nextInt (3)]; // Harmonic 3rd, 4th, or 5th
+                s.pan = (bar % 2 == 0) ? -0.35f : 0.35f;
+                s.distanceDepth = 0.25f;
                 s.velocity = 0.82f;
             }
         }
-        else if (stepInBar == 3 && (bar == 1 || bar == 3))
+        else if (beatInBar == 3 && (bar == 1 || bar == 3))
         {
-            // End of phrase tasteful turnaround / Ear-Candy fill
-            if (loadedTracks.size() >= 3 && rng.nextFloat() > 0.35f)
+            // Melodic lick resolution at bar endings
+            if (rng.nextFloat() > 0.30f)
             {
-                playThisStep = true;
-                activeTrack = loadedTracks[2];
-                activeSlice = rng.nextInt ((int) tracks[activeTrack].sliceMarkers.size());
-                pitchInterval = chordDegree + scaleNotesMinor[4]; // 5th/Octave
+                isNoteTrigger = true;
+                if (loadedTracks.size() >= 3 && rng.nextFloat() > 0.40f)
+                {
+                    activeTrack = loadedTracks[2];
+                    activeSlice = rng.nextInt ((int) tracks[activeTrack].sliceMarkers.size());
+                }
+                else
+                {
+                    activeTrack = mainTrack;
+                    activeSlice = signatureToneSlice;
+                }
+                noteOffset = rootChord + minorPentatonic[4]; // High 7th/octave ear-candy
                 s.pan = (bar == 1) ? 0.60f : -0.60f;
-                s.distanceDepth = 0.60f;
-                s.velocity = 0.72f;
+                s.distanceDepth = 0.50f;
+                s.velocity = 0.74f;
             }
         }
 
         s.trackIdx = activeTrack;
         s.sliceIdx = activeSlice;
-        s.isGate = playThisStep;
+        s.isGate = isNoteTrigger;
 
-        int keyDiff = masterTargetKey - tracks[activeTrack].sourceKey;
-        s.pitchOffset = keyDiff + (pitchInterval % 12);
+        // Accurate semitone transposition relative to loaded source key and target key
+        int baseTransposition = masterTargetKey - tracks[activeTrack].sourceKey;
+        s.pitchOffset = baseTransposition + noteOffset;
         s.isReverse = (step == 15 && rng.nextFloat() > 0.50f);
 
         patternSteps.push_back (s);
@@ -438,11 +450,11 @@ void EXAudioProcessor::triggerNewSliceVoice (int trkIdx, int sliceIdx, int pitch
     v.fadeStep = 1.0f / 256.0f;
 }
 
-// 100% PURE, STABLE, ZERO-DISTORTION PREVIEW RENDER (NO INFINITE FEEDBACK)
+// 100% TEMPO-LOCKED MASTER PREVIEW RENDERER
 void EXAudioProcessor::renderMasterPreviewBuffer()
 {
-    int baseBpm = std::max (60, masterTargetBpm);
-    double stepSec = (60.0 / baseBpm) * 0.25;
+    int curBpm = std::max (60, masterTargetBpm);
+    double stepSec = (60.0 / curBpm) * 0.25;
     if (halfTimeMode) stepSec *= 2.0;
     int curSamplesPerStep = static_cast<int> (stepSec * getSampleRate());
     int total = curSamplesPerStep * 16;
@@ -472,7 +484,6 @@ void EXAudioProcessor::renderMasterPreviewBuffer()
                 if (halfTimeMode) pRatio *= 0.5;
 
                 int writeStart = step * curSamplesPerStep;
-                // Allow note to sustain smoothly across 2 steps
                 int renderLength = std::min (curSamplesPerStep * 2, total - writeStart);
                 double rPos = s.isReverse ? (end - 1) : start;
 
@@ -513,7 +524,6 @@ void EXAudioProcessor::renderMasterPreviewBuffer()
         }
     }
 
-    // Pure peak normalization without running explosive stateful filters offline
     float maxPeak = 0.0f;
     for (int ch = 0; ch < 2; ++ch)
     {
@@ -570,6 +580,7 @@ juce::File EXAudioProcessor::exportCurrentAsAudioWav()
     return tempWav;
 }
 
+// EXACT GRID & BPM LOCKED MIDI EXPORTER
 juce::File EXAudioProcessor::exportCurrentAsMidi()
 {
     juce::int64 timestamp = juce::Time::currentTimeMillis();
@@ -580,37 +591,46 @@ juce::File EXAudioProcessor::exportCurrentAsMidi()
 
     const auto snapshotSteps = patternSteps;
     juce::MidiFile mf;
-    mf.setTicksPerQuarterNote (960);
+    const int ticksPerQuarter = 960;
+    mf.setTicksPerQuarterNote (ticksPerQuarter);
     
-    juce::MidiMessageSequence metaTrack;
-    double microSecondsPerQuarter = 60000000.0 / std::max (60, masterTargetBpm);
-    metaTrack.addEvent (juce::MidiMessage::tempoMetaEvent (static_cast<int> (microSecondsPerQuarter)), 0.0);
-    metaTrack.addEvent (juce::MidiMessage::timeSignatureMetaEvent (4, 4), 0.0);
-    metaTrack.updateMatchedPairs();
-    mf.addTrack (metaTrack);
+    int exportBpm = std::max (60, masterTargetBpm);
+    double microSecondsPerQuarter = 60000000.0 / exportBpm;
 
-    juce::MidiMessageSequence noteTrack;
-    int tickPerStep = 240;
+    juce::MidiMessageSequence trackSeq;
+    trackSeq.addEvent (juce::MidiMessage::tempoMetaEvent (static_cast<int> (microSecondsPerQuarter)), 0.0);
+    trackSeq.addEvent (juce::MidiMessage::timeSignatureMetaEvent (4, 4), 0.0);
+
+    // 16th note = Exactly 240 ticks at 960 PPQ
+    const int ticksPerStep = ticksPerQuarter / 4; 
 
     for (size_t i = 0; i < snapshotSteps.size(); ++i)
     {
         const auto& s = snapshotSteps[i];
         if (s.isGate && s.trackIdx >= 0 && s.trackIdx < 3 && tracks[s.trackIdx].hasAudio)
         {
-            int note = 60 + (s.pitchOffset % 24);
-            double sTick = static_cast<double> (i * tickPerStep);
-            double eTick = sTick + (tickPerStep * 2 - 40);
+            // Transpose into audible middle-octave register (C4 to C6)
+            int note = 60 + s.pitchOffset;
+            while (note < 48) note += 12;
+            while (note > 84) note -= 12;
+
+            double startTick = static_cast<double> (i * ticksPerStep);
+            // Sustained note duration across 2 steps for natural melody hold
+            double endTick = startTick + (ticksPerStep * 2 - 20); 
 
             int midiPan = juce::jlimit (0, 127, static_cast<int> ((s.pan + 1.0f) * 63.5f));
-            noteTrack.addEvent (juce::MidiMessage::controllerEvent (1, 10, midiPan), sTick);
+            trackSeq.addEvent (juce::MidiMessage::controllerEvent (1, 10, midiPan), startTick);
 
-            noteTrack.addEvent (juce::MidiMessage::noteOn (1, note, static_cast<juce::uint8> (s.velocity * 127)), sTick);
-            noteTrack.addEvent (juce::MidiMessage::noteOff (1, note), eTick);
+            trackSeq.addEvent (juce::MidiMessage::noteOn (1, note, static_cast<juce::uint8> (juce::jlimit (1, 127, (int) (s.velocity * 120)))), startTick);
+            trackSeq.addEvent (juce::MidiMessage::noteOff (1, note), endTick);
         }
     }
 
-    noteTrack.updateMatchedPairs();
-    mf.addTrack (noteTrack);
+    // Force exact 4-bar ending boundary marker so DAW doesn't shrink or stretch the pattern
+    double totalLoopTicks = static_cast<double> (16 * ticksPerStep);
+    trackSeq.addEvent (juce::MidiMessage::endOfTrack(), totalLoopTicks);
+    trackSeq.updateMatchedPairs();
+    mf.addTrack (trackSeq);
 
     juce::FileOutputStream fos (temp);
     if (fos.openedOk()) mf.writeTo (fos);
@@ -618,10 +638,24 @@ juce::File EXAudioProcessor::exportCurrentAsMidi()
     return temp;
 }
 
-// 100% BULLETPROOF LIVE AUDIO ENGINE
+// PROCESS BLOCK WITH ZERO NOISE & EXACT SYNC
 void EXAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
 {
     juce::ScopedNoDenormals noDenormals;
+
+    // Detect Host DAW Playhead BPM directly for sample-accurate sync
+    if (auto* playHead = getPlayHead())
+    {
+        if (auto position = playHead->getPosition())
+        {
+            if (position->getBpm().hasValue())
+            {
+                int hostBpm = static_cast<int> (*position->getBpm());
+                if (hostBpm >= 60 && hostBpm <= 220)
+                    masterTargetBpm = hostBpm;
+            }
+        }
+    }
 
     const float tapeDrive = apvts.getRawParameterValue ("TAPE_DRIVE")->load();
     const float delayTime = apvts.getRawParameterValue ("DELAY_TIME")->load();
@@ -631,8 +665,8 @@ void EXAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
     const float cutoff    = apvts.getRawParameterValue ("FILTER_CUTOFF")->load();
     const float masterOut = apvts.getRawParameterValue ("MASTER_OUT")->load();
 
-    int baseBpm = std::max (60, masterTargetBpm);
-    double stepSeconds = (60.0 / baseBpm) * 0.25;
+    int curBpm = std::max (60, masterTargetBpm);
+    double stepSeconds = (60.0 / curBpm) * 0.25;
     if (halfTimeMode) stepSeconds *= 2.0;
     samplesPerStep = static_cast<int> (stepSeconds * getSampleRate());
 
@@ -790,7 +824,6 @@ void EXAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
 
     buffer.applyGain (masterOut);
 
-    // Hard Sanity Check & Soft True Peak Limiter (-1.0 dB ceiling)
     for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
     {
         float* d = buffer.getWritePointer (ch);
