@@ -52,6 +52,11 @@ private:
 
     LayerUIComponent layerUIs[3];
 
+    // Layer 4: Master AI Preview Track UI
+    juce::Label previewTrackTitle;
+    juce::Rectangle<float> previewWaveArea;
+    juce::TextButton directExportWavBtn;
+
     juce::Label masterTargetTitle;
     juce::ComboBox masterKeySelector;
     juce::ComboBox masterModeSelector;
@@ -66,7 +71,6 @@ private:
 
     juce::TextButton playPauseButton;
     juce::TextButton dragMidiButton;
-    juce::TextButton dragAudioButton;
     juce::ToggleButton halfTimeToggle;
 
     juce::Slider tapeDriveKnob;
