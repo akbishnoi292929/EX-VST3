@@ -3,9 +3,10 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "PluginProcessor.h"
 
-class VintageHardwareKnobLookAndFeel : public juce::LookAndFeel_V4
+class LuxuryHardwareKnobLookAndFeel : public juce::LookAndFeel_V4
 {
 public:
+    LuxuryHardwareKnobLookAndFeel();
     void drawRotarySlider (juce::Graphics& g, int x, int y, int width, int height,
                            float sliderPosProportional, float rotaryStartAngle,
                            float rotaryEndAngle, juce::Slider& slider) override;
@@ -47,7 +48,7 @@ public:
 
 private:
     EXAudioProcessor& audioProcessor;
-    VintageHardwareKnobLookAndFeel vintageKnobLAF;
+    LuxuryHardwareKnobLookAndFeel luxuryKnobLAF;
 
     juce::Label brandTitle;
     juce::Label subTitle;
