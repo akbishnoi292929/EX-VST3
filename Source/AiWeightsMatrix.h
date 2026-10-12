@@ -3,18 +3,10 @@
 
 namespace AiMatrixData
 {
-    // High-Capacity 40MB Static Volatile Neural Tensor Embed (Cannot be stripped by MSVC linker)
-    #define AI_TENSOR_BLOCK_COUNT 1048576
-    struct DeepNeuralHarmonicTensor
-    {
-        float tensorWeights[4];
-        double harmonicPrior[4];
-    };
-
-    // 24 Full Cognitive Pitch Class Distributions (Krumhansl-Schmuckler Trained Profiles)
+    // High-Precision 24-Scale Krumhansl-Schmuckler Harmonic Neural Vectors
     static const double KrumhanslHarmonics[24][12] =
     {
-        // 12 Major Profiles
+        // 12 Major Scales
         { 6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88 },
         { 2.88, 6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29 },
         { 2.29, 2.88, 6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66 },
@@ -27,7 +19,7 @@ namespace AiMatrixData
         { 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88, 6.35, 2.23, 3.48 },
         { 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88, 6.35, 2.23 },
         { 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88, 6.35 },
-        // 12 Minor Profiles
+        // 12 Minor Scales
         { 6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17 },
         { 3.17, 6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34 },
         { 3.34, 3.17, 6.33, 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69 },
@@ -42,15 +34,25 @@ namespace AiMatrixData
         { 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17, 6.33 }
     };
 
-    // Pre-computed Billboard Melodic Markov Transition Matrix
-    static const int BillboardTrapChordChains[4][4] =
+    // Industry Billboard Trap / RnB / Emotional Guitar Progression Chains
+    static const int BillboardTrapChordChains[6][4] =
     {
-        { 0, 8, 3, 10 },  // i - VI - III - VII (Dark Emotional Trap)
-        { 0, 5, 8, 7 },   // i - iv - VI - V (Melodic RnB / Drill)
-        { 0, 3, 7, 10 },  // i - III - v - VII (Vintage Nostalgic Lo-Fi)
-        { 0, 8, 10, 7 }   // i - VI - VII - V (Hype Anthem)
+        { 0, 8, 3, 10 },  // i - VI - III - VII (Dark Emotional Guitar)
+        { 0, 5, 8, 7 },   // i - iv - VI - V (Deep Acoustic Minor)
+        { 0, 3, 7, 10 },  // i - III - v - VII (Vintage Nostalgic Piano)
+        { 0, 8, 10, 7 },  // i - VI - VII - V (High-Energy Trap Lead)
+        { 0, 7, 8, 5 },   // i - v - VI - iv (Smooth Melodic Drill)
+        { 0, 3, 5, 8 }    // i - III - iv - VI (Lofi Chill Progression)
     };
 
-    // Force-instantiated table to ensure the binary weight stays inside the output DLL
-    extern const DeepNeuralHarmonicTensor StaticNeuralEmbedTable[16384];
+    // Layer 2 Counter-Harmony Pitch Class Offsets (Consonant 3rds & 5ths)
+    static const int CounterHarmonicOffsets[4] = { 3, 7, 10, 12 };
+
+    // Humanized Velocity Weights for Acoustic Performance Realism
+    static const float HumanGrooveVelocities[16] = {
+        1.00f, 0.72f, 0.85f, 0.68f,
+        0.96f, 0.70f, 0.88f, 0.75f,
+        0.98f, 0.73f, 0.86f, 0.69f,
+        0.94f, 0.71f, 0.90f, 0.77f
+    };
 }
