@@ -1,28 +1,49 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 
-void VintageHardwareKnobLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int width, int height,
+LuxuryHardwareKnobLookAndFeel::LuxuryHardwareKnobLookAndFeel() {}
+
+void LuxuryHardwareKnobLookAndFeel::drawRotarySlider (juce::Graphics& g, int x, int y, int width, int height,
                                                       float sliderPos, float rotaryStartAngle,
-                                                      float rotaryEndAngle, juce::Slider&)
+                                                      float rotaryEndAngle, juce::Slider& slider)
 {
-    auto radius = (float) juce::jmin (width / 2, height / 2) - 4.0f;
+    auto radius = (float) juce::jmin (width / 2, height / 2) - 3.0f;
     auto centreX = (float) x + (float) width * 0.5f;
     auto centreY = (float) y + (float) height * 0.5f;
     auto angle = rotaryStartAngle + sliderPos * (rotaryEndAngle - rotaryStartAngle);
 
-    g.setColour (juce::Colour (0xff1f2126));
+    // 1. Outer Dark Gunmetal Shadow Ring
+    g.setColour (juce::Colour (0xff141518));
     g.fillEllipse (centreX - radius, centreY - radius, radius * 2.0f, radius * 2.0f);
 
+    // 2. Value Indicator Arc Track
+    float trackR = radius - 2.5f;
+    juce::Path trackPath;
+    trackPath.addCentredArc (centreX, centreY, trackR, trackR, 0.0f, rotaryStartAngle, rotaryEndAngle, true);
+    g.setColour (juce::Colour (0xff2b2d35));
+    g.strokePath (trackPath, juce::PathStrokeType (2.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+
+    // 3. Active Colored LED Arc
+    juce::Path activePath;
+    activePath.addCentredArc (centreX, centreY, trackR, trackR, 0.0f, rotaryStartAngle, angle, true);
+    g.setColour (juce::Colour (0xffe63946)); // Vibrant Studio Crimson
+    g.strokePath (activePath, juce::PathStrokeType (2.5f, juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+
+    // 4. Inner Anodized Metal Knob Cap
     float capR = radius * 0.72f;
-    g.setColour (juce::Colour (0xffb82222));
+    juce::ColourGradient grad (juce::Colour (0xff2d3038), centreX, centreY - capR,
+                               juce::Colour (0xff1a1b20), centreX, centreY + capR, false);
+    g.setGradientFill (grad);
     g.fillEllipse (centreX - capR, centreY - capR, capR * 2.0f, capR * 2.0f);
 
-    g.setColour (juce::Colour (0x44ffffff));
+    // Subtle Bevel Highlight Ring
+    g.setColour (juce::Colour (0x33ffffff));
     g.drawEllipse (centreX - capR, centreY - capR, capR * 2.0f, capR * 2.0f, 1.2f);
 
+    // 5. Sleek White Indicator Notch
     juce::Path p;
-    auto pointerLen = capR * 0.85f;
-    p.addRectangle (-1.5f, -pointerLen, 3.0f, pointerLen);
+    auto pointerLen = capR * 0.75f;
+    p.addRoundedRectangle (-1.2f, -pointerLen, 2.4f, pointerLen * 0.75f, 1.0f);
     p.applyTransform (juce::AffineTransform::rotation (angle).translated (centreX, centreY));
     g.setColour (juce::Colours::white);
     g.fillPath (p);
@@ -30,17 +51,17 @@ void VintageHardwareKnobLookAndFeel::drawRotarySlider (juce::Graphics& g, int x,
 
 void EXAudioProcessorEditor::setupHardwareKnob (juce::Slider& s, juce::Label& l, const juce::String& name)
 {
-    s.setLookAndFeel (&vintageKnobLAF);
+    s.setLookAndFeel (&luxuryKnobLAF);
     s.setSliderStyle (juce::Slider::RotaryVerticalDrag);
     s.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 55, 14);
     s.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
-    s.setColour (juce::Slider::textBoxTextColourId, juce::Colour (0xff2b2b2b));
+    s.setColour (juce::Slider::textBoxTextColourId, juce::Colour (0xff22252a));
     addAndMakeVisible (s);
 
     l.setText (name, juce::dontSendNotification);
-    l.setFont (juce::Font (10.5f, juce::Font::bold));
+    l.setFont (juce::Font (10.0f, juce::Font::bold));
     l.setJustificationType (juce::Justification::centred);
-    l.setColour (juce::Label::textColourId, juce::Colour (0xff4a4c52));
+    l.setColour (juce::Label::textColourId, juce::Colour (0xff555862));
     addAndMakeVisible (l);
 }
 
@@ -50,9 +71,10 @@ void EXAudioProcessorEditor::setupKeySelector (juce::ComboBox& box)
     for (int i = 0; i < 12; ++i)
         box.addItem (keys[i], i + 1);
 
-    box.setColour (juce::ComboBox::backgroundColourId, juce::Colour (0xffe8e6df));
-    box.setColour (juce::ComboBox::textColourId, juce::Colour (0xff1f2124));
-    box.setColour (juce::ComboBox::outlineColourId, juce::Colour (0xffb8b4a8));
+    box.setColour (juce::ComboBox::backgroundColourId, juce::Colour (0xffdedad0));
+    box.setColour (juce::ComboBox::textColourId, juce::Colour (0xff1a1b1f));
+    box.setColour (juce::ComboBox::outlineColourId, juce::Colour (0xffb3ada0));
+    box.setColour (juce::ComboBox::arrowColourId, juce::Colour (0xff33353c));
     addAndMakeVisible (box);
 }
 
@@ -63,9 +85,10 @@ void EXAudioProcessorEditor::setupModeSelector (juce::ComboBox& box)
     box.addItem ("DORIAN", 3);
     box.addItem ("PHRYG", 4);
 
-    box.setColour (juce::ComboBox::backgroundColourId, juce::Colour (0xffe8e6df));
-    box.setColour (juce::ComboBox::textColourId, juce::Colour (0xff1f2124));
-    box.setColour (juce::ComboBox::outlineColourId, juce::Colour (0xffb8b4a8));
+    box.setColour (juce::ComboBox::backgroundColourId, juce::Colour (0xffdedad0));
+    box.setColour (juce::ComboBox::textColourId, juce::Colour (0xff1a1b1f));
+    box.setColour (juce::ComboBox::outlineColourId, juce::Colour (0xffb3ada0));
+    box.setColour (juce::ComboBox::arrowColourId, juce::Colour (0xff33353c));
     addAndMakeVisible (box);
 }
 
@@ -182,23 +205,37 @@ EXAudioProcessorEditor::EXAudioProcessorEditor (EXAudioProcessor& p)
         ui.keySelector.setSelectedId (audioProcessor.getTrack (i).sourceKey + 1, juce::dontSendNotification);
         ui.modeSelector.setSelectedId (audioProcessor.getTrack (i).sourceScaleMode + 1, juce::dontSendNotification);
 
+        // Fixed Scale / Key Change Listeners
+        ui.keySelector.onChange = [this, i]() {
+            audioProcessor.getTrack (i).sourceKey = layerUIs[i].keySelector.getSelectedId() - 1;
+            audioProcessor.renderMasterPreviewBuffer();
+        };
+        ui.modeSelector.onChange = [this, i]() {
+            audioProcessor.getTrack (i).sourceScaleMode = layerUIs[i].modeSelector.getSelectedId() - 1;
+            audioProcessor.renderMasterPreviewBuffer();
+        };
+
         ui.bpmSlider.setRange (60, 200, 1);
         ui.bpmSlider.setValue (audioProcessor.getTrack (i).sourceBpm, juce::dontSendNotification);
         ui.bpmSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false, 40, 20);
         ui.bpmSlider.setColour (juce::Slider::textBoxTextColourId, juce::Colour (0xff2b2b2b));
+        ui.bpmSlider.onValueChange = [this, i]() {
+            audioProcessor.getTrack (i).sourceBpm = (int) layerUIs[i].bpmSlider.getValue();
+            audioProcessor.renderMasterPreviewBuffer();
+        };
         addAndMakeVisible (ui.bpmSlider);
 
-        // Dedicated Layer Volume Slider
-        ui.volSlider.setLookAndFeel (&vintageKnobLAF);
+        // Sleek Minimalist Studio Volume Knob
+        ui.volSlider.setLookAndFeel (&luxuryKnobLAF);
         ui.volSlider.setSliderStyle (juce::Slider::RotaryVerticalDrag);
-        ui.volSlider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 40, 12);
-        ui.volSlider.setColour (juce::Slider::textBoxTextColourId, juce::Colour (0xff2b2b2b));
+        ui.volSlider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
+        ui.volSlider.onValueChange = [this]() { audioProcessor.renderMasterPreviewBuffer(); };
         addAndMakeVisible (ui.volSlider);
 
         ui.volLabel.setText ("VOL", juce::dontSendNotification);
         ui.volLabel.setFont (juce::Font (9.0f, juce::Font::bold));
         ui.volLabel.setJustificationType (juce::Justification::centred);
-        ui.volLabel.setColour (juce::Label::textColourId, juce::Colour (0xff4a4c52));
+        ui.volLabel.setColour (juce::Label::textColourId, juce::Colour (0xff656872));
         addAndMakeVisible (ui.volLabel);
 
         ui.muteBtn.setButtonText ("M");
@@ -241,7 +278,6 @@ EXAudioProcessorEditor::EXAudioProcessorEditor (EXAudioProcessor& p)
     };
     addAndMakeVisible (directExportWavBtn);
 
-    // Multi-Track STEMS Drag Button
     exportStemsBtn.setButtonText ("DRAG STEMS");
     exportStemsBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff2a6f97));
     exportStemsBtn.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
@@ -360,15 +396,9 @@ EXAudioProcessorEditor::~EXAudioProcessorEditor()
     setLookAndFeel (nullptr);
 }
 
+// Fixed Timer Callback: Does NOT force-reset comboboxes while user is interacting
 void EXAudioProcessorEditor::timerCallback()
 {
-    for (int i = 0; i < 3; ++i)
-    {
-        layerUIs[i].keySelector.setSelectedId (audioProcessor.getTrack (i).sourceKey + 1, juce::dontSendNotification);
-        layerUIs[i].modeSelector.setSelectedId (audioProcessor.getTrack (i).sourceScaleMode + 1, juce::dontSendNotification);
-        layerUIs[i].bpmSlider.setValue (audioProcessor.getTrack (i).sourceBpm, juce::dontSendNotification);
-    }
-
     bool isPlay = audioProcessor.isPlayingActive();
     playPauseButton.setButtonText (isPlay ? juce::CharPointer_UTF8 ("\xe2\x8f\xb8 PAUSE") : juce::CharPointer_UTF8 ("\xe2\x96\xb6 PLAY"));
     playPauseButton.setColour (juce::TextButton::buttonColourId, isPlay ? juce::Colour (0xff9e1e1e) : juce::Colour (0xff1b633b));
@@ -409,6 +439,9 @@ void EXAudioProcessorEditor::filesDropped (const juce::StringArray& files, int, 
     if (targetLayer >= 0 && targetLayer < 3)
     {
         audioProcessor.loadAudioFileToLayer (targetLayer, juce::File (files[0]));
+        layerUIs[targetLayer].keySelector.setSelectedId (audioProcessor.getTrack (targetLayer).sourceKey + 1, juce::dontSendNotification);
+        layerUIs[targetLayer].modeSelector.setSelectedId (audioProcessor.getTrack (targetLayer).sourceScaleMode + 1, juce::dontSendNotification);
+        layerUIs[targetLayer].bpmSlider.setValue (audioProcessor.getTrack (targetLayer).sourceBpm, juce::dontSendNotification);
         repaint();
     }
 }
@@ -484,7 +517,7 @@ void EXAudioProcessorEditor::mouseUp (const juce::MouseEvent&)
 
 void EXAudioProcessorEditor::paint (juce::Graphics& g)
 {
-    g.fillAll (juce::Colour (0xff4a2c18));
+    g.fillAll (juce::Colour (0xff4a2c18)); // Vintage Dark Walnut Chassis
 
     auto body = getLocalBounds().reduced (14, 10).toFloat();
     g.setColour (juce::Colour (0xffece9e1));
@@ -493,6 +526,7 @@ void EXAudioProcessorEditor::paint (juce::Graphics& g)
     g.setColour (juce::Colour (0xffcfcac0));
     g.drawRoundedRectangle (body, 6.0f, 2.0f);
 
+    // Chassis Corner Screws
     g.setColour (juce::Colour (0xffa8a49c));
     g.fillEllipse (20.0f, 16.0f, 7.0f, 7.0f);
     g.fillEllipse (static_cast<float> (getWidth() - 27), 16.0f, 7.0f, 7.0f);
@@ -538,11 +572,12 @@ void EXAudioProcessorEditor::paint (juce::Graphics& g)
     g.setColour (juce::Colour (0xffc4beb2));
     g.drawRoundedRectangle (lowerBar, 4.0f, 1.0f);
 
+    // Waveform Panels
     for (int i = 0; i < 3; ++i)
     {
         auto& ui = layerUIs[i];
         auto& trk = audioProcessor.getTrack (i);
-        g.setColour (juce::Colour (0xff1f2128));
+        g.setColour (juce::Colour (0xff1a1c22));
         g.fillRoundedRectangle (ui.waveArea, 3.0f);
 
         if (trk.hasAudio && trk.buffer.getNumSamples() > 0)
@@ -580,7 +615,7 @@ void EXAudioProcessorEditor::paint (juce::Graphics& g)
         }
     }
 
-    g.setColour (juce::Colour (0xff191724));
+    g.setColour (juce::Colour (0xff161324));
     g.fillRoundedRectangle (previewWaveArea, 3.0f);
     g.setColour (juce::Colour (0x667b2cbf));
     g.drawRoundedRectangle (previewWaveArea, 3.0f, 1.2f);
@@ -666,9 +701,9 @@ void EXAudioProcessorEditor::resized()
         ui.modeSelector.setBounds (163, y + 14, 75, 22);
         ui.bpmSlider.setBounds (242, y + 14, 75, 22);
 
-        // Layer Volume Rotary Knob & Label
-        ui.volSlider.setBounds (322, y + 4, 38, 42);
-        ui.volLabel.setBounds (322, y + 44, 38, 10);
+        // Perfectly Proportioned Modern Rotary Knob
+        ui.volSlider.setBounds (324, y + 8, 34, 34);
+        ui.volLabel.setBounds (324, y + 42, 34, 10);
 
         ui.muteBtn.setBounds (366, y + 14, 22, 22);
         ui.clearBtn.setBounds (392, y + 14, 22, 22);
