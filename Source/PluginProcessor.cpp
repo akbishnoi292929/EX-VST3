@@ -123,6 +123,7 @@ static int snapToZeroCrossing (const juce::AudioBuffer<float>& buf, int targetSa
     return bestSample;
 }
 
+// REAL MUSICAL TEMPO-AWARE SLICING (BPM Beat Grid + Transient Hybrid)
 void EXAudioProcessor::applyGridSlicingToLayer (int layerIdx, GridDivision div)
 {
     if (layerIdx < 0 || layerIdx >= 3) return;
@@ -167,16 +168,27 @@ void EXAudioProcessor::applyGridSlicingToLayer (int layerIdx, GridDivision div)
         return;
     }
 
-    int numCuts = 16;
-    if (div == GridDivision::Quarter) numCuts = 4;
-    else if (div == GridDivision::Eighth) numCuts = 8;
-    else if (div == GridDivision::Sixteenth) numCuts = 16;
-    else if (div == GridDivision::Triplet1_3) numCuts = 6;
-    else if (div == GridDivision::Triplet1_6) numCuts = 12;
+    // BPM-AWARE MUSICAL GRID SLICING: Beats and subdivisions calculated from tempo
+    double sRate = (getSampleRate() > 0.0) ? getSampleRate() : 44100.0;
+    double secPerBeat = 60.0 / std::max (60, track.sourceBpm);
+    int samplesPerBeat = static_cast<int> (secPerBeat * sRate);
 
-    int stepSize = total / numCuts;
-    for (int i = 0; i < numCuts; ++i)
-        track.sliceMarkers.push_back (snapToZeroCrossing (track.buffer, i * stepSize));
+    int stepSize = samplesPerBeat; // 1/4 (1 beat)
+    if (div == GridDivision::Eighth)        stepSize = samplesPerBeat / 2;
+    else if (div == GridDivision::Sixteenth) stepSize = samplesPerBeat / 4;
+    else if (div == GridDivision::Triplet1_3) stepSize = static_cast<int> (samplesPerBeat * (4.0 / 3.0));
+    else if (div == GridDivision::Triplet1_6) stepSize = static_cast<int> (samplesPerBeat * (2.0 / 3.0));
+
+    if (stepSize <= 0) stepSize = total / 16;
+
+    for (int pos = 0; pos < total; pos += stepSize)
+    {
+        track.sliceMarkers.push_back (snapToZeroCrossing (track.buffer, pos));
+        if (track.sliceMarkers.size() >= 16) break;
+    }
+
+    if (track.sliceMarkers.empty())
+        track.sliceMarkers.push_back (0);
 }
 
 void EXAudioProcessor::runAdvancedAiAudioAnalysis (int layerIdx)
@@ -213,7 +225,7 @@ void EXAudioProcessor::runAdvancedAiAudioAnalysis (int layerIdx)
     for (int lag = 70; lag < 450; lag += 2)
     {
         double freq = 44100.0 / (double) lag;
-        if (freq >= 75.0 && freq <= 900.0)
+        if (freq >= 80.0 && freq <= 800.0)
         {
             int midi = (int) std::round (69.0 + 12.0 * std::log2 (freq / 440.0));
             int pClass = ((midi % 12) + 12) % 12;
@@ -269,7 +281,7 @@ void EXAudioProcessor::loadAudioFileToLayer (int layerIdx, const juce::File& fil
         track.fileName = file.getFileNameWithoutExtension().substring (0, 10);
 
         runAdvancedAiAudioAnalysis (layerIdx);
-        applyGridSlicingToLayer (layerIdx, GridDivision::Transient);
+        applyGridSlicingToLayer (layerIdx, currentGrid);
 
         if (layerIdx == 0)
         {
@@ -314,9 +326,7 @@ void EXAudioProcessor::rollDiceAndGenerateMasterPattern()
     runCoordinatedAiGeneration();
 }
 
-// -----------------------------------------------------------------------------------------
-// REAL COHESIVE MELODY BRAIN: DIATONIC PASSING TONES & HUMAN PHRASING
-// -----------------------------------------------------------------------------------------
+// HUMAN GROOVE & SOULFUL MELODY GENERATION ENGINE
 void EXAudioProcessor::runCoordinatedAiGeneration()
 {
     patternSteps.clear();
@@ -338,7 +348,6 @@ void EXAudioProcessor::runCoordinatedAiGeneration()
     activeDiceNumber = 1 + rng.nextInt (6);
 
     int progressionType = rng.nextInt (6);
-    // Diatonic Natural Minor Scale Intervals (0, 2, 3, 5, 7, 8, 10, 12)
     const int minorScale[8] = { 0, 2, 3, 5, 7, 8, 10, 12 };
 
     int mainTrack = loadedTracks[0];
@@ -357,44 +366,47 @@ void EXAudioProcessor::runCoordinatedAiGeneration()
         int activeSlice = signatureTone;
         int intervalPitch = rootChord;
 
-        if (beat == 0) // Foundation Theme Anchor
+        // Humanized dynamic velocity curve (Natural acoustic hand dynamics)
+        float humanVelocity = 0.85f + (rng.nextFloat() * 0.12f);
+
+        if (beat == 0) // Foundation anchor
         {
             isPlay = true;
             activeTrack = mainTrack;
             activeSlice = signatureTone;
             intervalPitch = rootChord;
             s.pan = 0.0f;
-            s.velocity = 1.0f;
+            s.velocity = 0.98f;
             s.distanceDepth = 0.0f;
         }
-        else if (beat == 2) // Syncopated Harmony / Counter-Hook
+        else if (beat == 2) // Syncopated answering lick
         {
-            if (rng.nextFloat() > 0.25f)
+            if (rng.nextFloat() > 0.22f)
             {
                 isPlay = true;
                 if (loadedTracks.size() >= 2 && rng.nextFloat() > 0.35f)
                 {
                     activeTrack = loadedTracks[1];
                     activeSlice = rng.nextInt ((int) tracks[activeTrack].sliceMarkers.size());
-                    intervalPitch = rootChord + minorScale[2 + rng.nextInt (3)]; // Harmonic 3rd, 4th, or 5th
+                    intervalPitch = rootChord + minorScale[2 + rng.nextInt (3)];
                 }
                 else
                 {
                     activeTrack = mainTrack;
                     activeSlice = (signatureTone + 1) % numSlices;
-                    intervalPitch = rootChord + minorScale[2]; // Minor 3rd
+                    intervalPitch = rootChord + minorScale[2];
                 }
                 s.pan = (bar % 2 == 0) ? -0.32f : 0.32f;
-                s.velocity = 0.88f;
+                s.velocity = humanVelocity * 0.92f;
                 s.distanceDepth = 0.20f;
             }
         }
-        else if (beat == 3 && (bar == 1 || bar == 3)) // Melodic Lick / Ear Candy
+        else if (beat == 3 && (bar == 1 || bar == 3)) // Musical ear-candy turnaround
         {
-            if (rng.nextFloat() > 0.30f)
+            if (rng.nextFloat() > 0.28f)
             {
                 isPlay = true;
-                if (loadedTracks.size() >= 3 && rng.nextFloat() > 0.40f)
+                if (loadedTracks.size() >= 3 && rng.nextFloat() > 0.35f)
                 {
                     activeTrack = loadedTracks[2];
                     activeSlice = rng.nextInt ((int) tracks[activeTrack].sliceMarkers.size());
@@ -404,9 +416,9 @@ void EXAudioProcessor::runCoordinatedAiGeneration()
                     activeTrack = mainTrack;
                     activeSlice = signatureTone;
                 }
-                intervalPitch = rootChord + minorScale[6]; // Minor 7th / Octave resolution
+                intervalPitch = rootChord + minorScale[6];
                 s.pan = (bar == 1) ? 0.55f : -0.55f;
-                s.velocity = 0.80f;
+                s.velocity = humanVelocity * 0.86f;
                 s.distanceDepth = 0.40f;
             }
         }
@@ -467,7 +479,6 @@ void EXAudioProcessor::triggerNewSliceVoice (int trkIdx, int sliceIdx, int pitch
     v.fadeStep = 1.0f / 256.0f;
 }
 
-// FULL DSP BAKE-IN PREVIEW RENDERER (LIVE EFFECTS MATCH EXPORT 100%)
 void EXAudioProcessor::renderMasterPreviewBuffer()
 {
     int curBpm = std::max (60, masterTargetBpm);
@@ -542,14 +553,12 @@ void EXAudioProcessor::renderMasterPreviewBuffer()
         }
     }
 
-    // BAKE EFFECTS INTO AUDIO: Tape Saturation, Delay & Space
     const float tapeDrive = apvts.getRawParameterValue ("TAPE_DRIVE")->load();
     const float delayTime = apvts.getRawParameterValue ("DELAY_TIME")->load();
     const float delayMix  = apvts.getRawParameterValue ("DELAY_MIX")->load();
     const float rvbMix    = apvts.getRawParameterValue ("REVERB_MIX")->load();
     const float masterOut = apvts.getRawParameterValue ("MASTER_OUT")->load();
 
-    // Baked Delay
     if (delayMix > 0.01f)
     {
         int dSamples = static_cast<int> (delayTime * getSampleRate());
@@ -567,7 +576,6 @@ void EXAudioProcessor::renderMasterPreviewBuffer()
         }
     }
 
-    // Baked Reverb Tail Simulation
     if (rvbMix > 0.01f)
     {
         int rvbOffset = static_cast<int> (0.045 * getSampleRate());
@@ -582,7 +590,6 @@ void EXAudioProcessor::renderMasterPreviewBuffer()
         }
     }
 
-    // Baked Tape & Clean Master Peak Limiting
     float driveGain = 1.0f + (tapeDrive * 1.5f);
     for (int ch = 0; ch < 2; ++ch)
     {
@@ -637,7 +644,6 @@ juce::File EXAudioProcessor::exportCurrentAsAudioWav()
     return tempWav;
 }
 
-// MULTI-STEM EXPORTER: Renders individual layers as separate stem files
 juce::StringArray EXAudioProcessor::exportCurrentAsStems()
 {
     juce::StringArray stemFiles;
