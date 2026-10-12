@@ -163,7 +163,7 @@ EXAudioProcessorEditor::EXAudioProcessorEditor (EXAudioProcessor& p)
     brandTitle.setColour (juce::Label::textColourId, juce::Colour (0xff9e1e1e));
     addAndMakeVisible (brandTitle);
 
-    subTitle.setText ("HEARTLESS SAMPLE FLIPPER // MULTI-LAYER WORKSTATION", juce::dontSendNotification);
+    subTitle.setText ("HEARTLESS SAMPLE FLIPPER // 4-LAYER AI WORKSTATION", juce::dontSendNotification);
     subTitle.setFont (juce::Font (11.0f, juce::Font::bold));
     subTitle.setColour (juce::Label::textColourId, juce::Colour (0xff63666f));
     addAndMakeVisible (subTitle);
@@ -182,14 +182,23 @@ EXAudioProcessorEditor::EXAudioProcessorEditor (EXAudioProcessor& p)
         ui.keySelector.setSelectedId (audioProcessor.getTrack (i).sourceKey + 1, juce::dontSendNotification);
         ui.modeSelector.setSelectedId (audioProcessor.getTrack (i).sourceScaleMode + 1, juce::dontSendNotification);
 
-        ui.keySelector.onChange = [this, i]() { audioProcessor.getTrack (i).sourceKey = layerUIs[i].keySelector.getSelectedId() - 1; };
-        ui.modeSelector.onChange = [this, i]() { audioProcessor.getTrack (i).sourceScaleMode = layerUIs[i].modeSelector.getSelectedId() - 1; };
+        ui.keySelector.onChange = [this, i]() {
+            audioProcessor.getTrack (i).sourceKey = layerUIs[i].keySelector.getSelectedId() - 1;
+            audioProcessor.renderMasterPreviewBuffer();
+        };
+        ui.modeSelector.onChange = [this, i]() {
+            audioProcessor.getTrack (i).sourceScaleMode = layerUIs[i].modeSelector.getSelectedId() - 1;
+            audioProcessor.renderMasterPreviewBuffer();
+        };
 
         ui.bpmSlider.setRange (60, 200, 1);
         ui.bpmSlider.setValue (audioProcessor.getTrack (i).sourceBpm, juce::dontSendNotification);
         ui.bpmSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false, 40, 20);
         ui.bpmSlider.setColour (juce::Slider::textBoxTextColourId, juce::Colour (0xff2b2b2b));
-        ui.bpmSlider.onValueChange = [this, i]() { audioProcessor.getTrack (i).sourceBpm = (int) layerUIs[i].bpmSlider.getValue(); };
+        ui.bpmSlider.onValueChange = [this, i]() {
+            audioProcessor.getTrack (i).sourceBpm = (int) layerUIs[i].bpmSlider.getValue();
+            audioProcessor.renderMasterPreviewBuffer();
+        };
         addAndMakeVisible (ui.bpmSlider);
 
         ui.muteBtn.setButtonText ("M");
@@ -198,6 +207,7 @@ EXAudioProcessorEditor::EXAudioProcessorEditor (EXAudioProcessor& p)
         ui.muteBtn.onClick = [this, i]() {
             audioProcessor.getTrack (i).isMute = !audioProcessor.getTrack (i).isMute;
             layerUIs[i].muteBtn.setColour (juce::TextButton::buttonColourId, audioProcessor.getTrack (i).isMute ? juce::Colour (0xffb82222) : juce::Colour (0xff32353e));
+            audioProcessor.renderMasterPreviewBuffer();
         };
         addAndMakeVisible (ui.muteBtn);
 
@@ -208,6 +218,26 @@ EXAudioProcessorEditor::EXAudioProcessorEditor (EXAudioProcessor& p)
         addAndMakeVisible (ui.clearBtn);
     }
 
+    // Layer 4: Master Preview Track Setup
+    previewTrackTitle.setText ("MASTER FLIP", juce::dontSendNotification);
+    previewTrackTitle.setFont (juce::Font (11.0f, juce::Font::bold));
+    previewTrackTitle.setColour (juce::Label::textColourId, juce::Colour (0xff7b2cbf));
+    addAndMakeVisible (previewTrackTitle);
+
+    directExportWavBtn.setButtonText ("DRAG AUDIO");
+    directExportWavBtn.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff7b2cbf));
+    directExportWavBtn.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
+    directExportWavBtn.onClick = [this]() {
+        auto wf = audioProcessor.exportCurrentAsAudioWav();
+        if (wf.existsAsFile())
+        {
+            juce::StringArray files;
+            files.add (wf.getFullPathName());
+            juce::DragAndDropContainer::performExternalDragDropOfFiles (files, false);
+        }
+    };
+    addAndMakeVisible (directExportWavBtn);
+
     masterTargetTitle.setText ("MASTER TARGET", juce::dontSendNotification);
     masterTargetTitle.setFont (juce::Font (11.5f, juce::Font::bold));
     masterTargetTitle.setColour (juce::Label::textColourId, juce::Colour (0xff1b633b));
@@ -217,14 +247,23 @@ EXAudioProcessorEditor::EXAudioProcessorEditor (EXAudioProcessor& p)
     setupModeSelector (masterModeSelector);
     masterKeySelector.setSelectedId (audioProcessor.masterTargetKey + 1, juce::dontSendNotification);
     masterModeSelector.setSelectedId (audioProcessor.masterTargetScaleMode + 1, juce::dontSendNotification);
-    masterKeySelector.onChange = [this]() { audioProcessor.masterTargetKey = masterKeySelector.getSelectedId() - 1; };
-    masterModeSelector.onChange = [this]() { audioProcessor.masterTargetScaleMode = masterModeSelector.getSelectedId() - 1; };
+    masterKeySelector.onChange = [this]() {
+        audioProcessor.masterTargetKey = masterKeySelector.getSelectedId() - 1;
+        audioProcessor.renderMasterPreviewBuffer();
+    };
+    masterModeSelector.onChange = [this]() {
+        audioProcessor.masterTargetScaleMode = masterModeSelector.getSelectedId() - 1;
+        audioProcessor.renderMasterPreviewBuffer();
+    };
 
     masterBpmSlider.setRange (60, 200, 1);
     masterBpmSlider.setValue (audioProcessor.masterTargetBpm, juce::dontSendNotification);
     masterBpmSlider.setTextBoxStyle (juce::Slider::TextBoxLeft, false, 42, 22);
     masterBpmSlider.setColour (juce::Slider::textBoxTextColourId, juce::Colour (0xff2b2b2b));
-    masterBpmSlider.onValueChange = [this]() { audioProcessor.masterTargetBpm = (int) masterBpmSlider.getValue(); };
+    masterBpmSlider.onValueChange = [this]() {
+        audioProcessor.masterTargetBpm = (int) masterBpmSlider.getValue();
+        audioProcessor.renderMasterPreviewBuffer();
+    };
     addAndMakeVisible (masterBpmSlider);
 
     auto setupGridBtn = [this](juce::TextButton& b, const juce::String& text, GridDivision div) {
@@ -233,6 +272,7 @@ EXAudioProcessorEditor::EXAudioProcessorEditor (EXAudioProcessor& p)
         b.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
         b.onClick = [this, div]() {
             for (int i = 0; i < 3; ++i) audioProcessor.applyGridSlicingToLayer (i, div);
+            audioProcessor.renderMasterPreviewBuffer();
             repaint();
         };
         addAndMakeVisible (b);
@@ -256,7 +296,6 @@ EXAudioProcessorEditor::EXAudioProcessorEditor (EXAudioProcessor& p)
     };
     addAndMakeVisible (playPauseButton);
 
-    // Completely Safe Drag-Drop Trigger without destroying pattern
     dragMidiButton.setButtonText ("DRAG MIDI");
     dragMidiButton.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff234a6e));
     dragMidiButton.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
@@ -271,23 +310,12 @@ EXAudioProcessorEditor::EXAudioProcessorEditor (EXAudioProcessor& p)
     };
     addAndMakeVisible (dragMidiButton);
 
-    dragAudioButton.setButtonText ("DRAG AUDIO");
-    dragAudioButton.setColour (juce::TextButton::buttonColourId, juce::Colour (0xff1b633b));
-    dragAudioButton.setColour (juce::TextButton::textColourOffId, juce::Colours::white);
-    dragAudioButton.onClick = [this]() {
-        auto wf = audioProcessor.exportCurrentAsAudioWav();
-        if (wf.existsAsFile())
-        {
-            juce::StringArray files;
-            files.add (wf.getFullPathName());
-            juce::DragAndDropContainer::performExternalDragDropOfFiles (files, false);
-        }
-    };
-    addAndMakeVisible (dragAudioButton);
-
     halfTimeToggle.setButtonText ("HALFTIME (1/2X)");
     halfTimeToggle.setColour (juce::ToggleButton::textColourId, juce::Colour (0xff333333));
-    halfTimeToggle.onClick = [this]() { audioProcessor.halfTimeMode = halfTimeToggle.getToggleState(); };
+    halfTimeToggle.onClick = [this]() {
+        audioProcessor.halfTimeMode = halfTimeToggle.getToggleState();
+        audioProcessor.renderMasterPreviewBuffer();
+    };
     addAndMakeVisible (halfTimeToggle);
 
     setupHardwareKnob (delayTimeKnob, delayTimeLabel, "TIME");
@@ -306,7 +334,7 @@ EXAudioProcessorEditor::EXAudioProcessorEditor (EXAudioProcessor& p)
     filterAtt    = std::make_unique<Attachment> (audioProcessor.apvts, "FILTER_CUTOFF", filterCutoffKnob);
     masterAtt    = std::make_unique<Attachment> (audioProcessor.apvts, "MASTER_OUT", masterOutKnob);
 
-    setSize (980, 620);
+    setSize (980, 680); // Height expanded for 4th Preview Track
     startTimerHz (40);
 }
 
@@ -358,8 +386,8 @@ void EXAudioProcessorEditor::filesDropped (const juce::StringArray& files, int, 
     if (files.size() == 0) return;
 
     int targetLayer = 0;
-    if (y > 420 && y <= 480) targetLayer = 1;
-    else if (y > 480) targetLayer = 2;
+    if (y > 410 && y <= 460) targetLayer = 1;
+    else if (y > 460) targetLayer = 2;
 
     audioProcessor.loadAudioFileToLayer (targetLayer, juce::File (files[0]));
     repaint();
@@ -369,8 +397,21 @@ void EXAudioProcessorEditor::mouseDown (const juce::MouseEvent& e)
 {
     if (radarCircleArea.contains (e.position))
     {
-        audioProcessor.rollDiceAndGenerateMasterPattern();
+        audioProcessor.runCoordinatedAiGeneration();
         return;
+    }
+
+    // Direct drag from Layer 4 Preview Waveform into FL Studio!
+    if (previewWaveArea.contains (e.position) && audioProcessor.getMasterPreviewBuffer().getNumSamples() > 0)
+    {
+        auto wf = audioProcessor.exportCurrentAsAudioWav();
+        if (wf.existsAsFile())
+        {
+            juce::StringArray files;
+            files.add (wf.getFullPathName());
+            juce::DragAndDropContainer::performExternalDragDropOfFiles (files, false);
+            return;
+        }
     }
 
     draggingLayerIdx = -1;
@@ -410,6 +451,7 @@ void EXAudioProcessorEditor::mouseDrag (const juce::MouseEvent& e)
             float curX = juce::jlimit (area.getX(), area.getRight(), e.position.x) - area.getX();
             float samplePerPx = (float) trk.buffer.getNumSamples() / area.getWidth();
             audioProcessor.setSlicePosition (draggingLayerIdx, draggingMarkerIdx, (int) (curX * samplePerPx));
+            audioProcessor.renderMasterPreviewBuffer();
             repaint();
         }
     }
@@ -471,12 +513,13 @@ void EXAudioProcessorEditor::paint (juce::Graphics& g)
     g.drawRoundedRectangle (leftBox, 4.0f, 1.0f);
     g.drawRoundedRectangle (rightBox, 4.0f, 1.0f);
 
-    auto lowerBar = juce::Rectangle<float> (35.0f, 320.0f, static_cast<float> (getWidth() - 70), 245.0f);
+    auto lowerBar = juce::Rectangle<float> (35.0f, 320.0f, static_cast<float> (getWidth() - 70), 325.0f);
     g.setColour (juce::Colour (0xffdfdbcf));
     g.fillRoundedRectangle (lowerBar, 4.0f);
     g.setColour (juce::Colour (0xffc4beb2));
     g.drawRoundedRectangle (lowerBar, 4.0f, 1.0f);
 
+    // Paint Layers 1, 2, 3 Waveforms
     for (int i = 0; i < 3; ++i)
     {
         auto& ui = layerUIs[i];
@@ -498,7 +541,7 @@ void EXAudioProcessorEditor::paint (juce::Graphics& g)
                 int sIdx = static_cast<int> ((x / w) * total);
                 sIdx = juce::jlimit (0, total - 1, sIdx);
                 float v = trk.buffer.getSample (0, sIdx);
-                g.drawLine (ui.waveArea.getX() + x, mid - (v * 20.0f), ui.waveArea.getX() + x, mid + (v * 20.0f), 1.0f);
+                g.drawLine (ui.waveArea.getX() + x, mid - (v * 18.0f), ui.waveArea.getX() + x, mid + (v * 18.0f), 1.0f);
             }
 
             for (int slice : trk.sliceMarkers)
@@ -516,6 +559,35 @@ void EXAudioProcessorEditor::paint (juce::Graphics& g)
             g.setFont (11.0f);
             g.drawText ("DROP AUDIO HERE", ui.waveArea.toNearestInt(), juce::Justification::centred);
         }
+    }
+
+    // Paint Layer 4: Master AI Preview Track Bed
+    g.setColour (juce::Colour (0xff191724)); // Obsidian Violet
+    g.fillRoundedRectangle (previewWaveArea, 3.0f);
+    g.setColour (juce::Colour (0x667b2cbf));
+    g.drawRoundedRectangle (previewWaveArea, 3.0f, 1.2f);
+
+    auto& pBuf = audioProcessor.getMasterPreviewBuffer();
+    if (pBuf.getNumSamples() > 0)
+    {
+        g.setColour (juce::Colour (0xff9d4edd)); // Vivid Neon Purple
+        int total = pBuf.getNumSamples();
+        float w = previewWaveArea.getWidth();
+        float mid = previewWaveArea.getCentreY();
+
+        for (int x = 0; x < (int) w; ++x)
+        {
+            int sIdx = static_cast<int> ((x / w) * total);
+            sIdx = juce::jlimit (0, total - 1, sIdx);
+            float v = pBuf.getSample (0, sIdx);
+            g.drawLine (previewWaveArea.getX() + x, mid - (v * 20.0f), previewWaveArea.getX() + x, mid + (v * 20.0f), 1.0f);
+        }
+    }
+    else
+    {
+        g.setColour (juce::Colour (0xff7b2cbf));
+        g.setFont (11.5f);
+        g.drawText ("MASTER FLIP PREVIEW // DRAG FROM HERE DIRECTLY TO PLAYLIST", previewWaveArea.toNearestInt(), juce::Justification::centred);
     }
 }
 
@@ -563,22 +635,27 @@ void EXAudioProcessorEditor::resized()
     btnTriplet1_6.setBounds (gX + 172, gY, gW + 6, 24);
     btnTransient.setBounds (gX + 218, gY, 50, 24);
 
+    // Layout Layers 1, 2, 3
     int startY = 368;
-    int slotH = 58;
+    int slotH = 55;
     for (int i = 0; i < 3; ++i)
     {
         auto& ui = layerUIs[i];
         int y = startY + (i * slotH);
 
-        ui.titleLabel.setBounds (45, y + 16, 60, 20);
-        ui.keySelector.setBounds (110, y + 16, 62, 22);
-        ui.modeSelector.setBounds (177, y + 16, 80, 22);
-        ui.bpmSlider.setBounds (262, y + 16, 85, 22);
-        ui.muteBtn.setBounds (352, y + 16, 24, 22);
-        ui.clearBtn.setBounds (380, y + 16, 24, 22);
+        ui.titleLabel.setBounds (45, y + 14, 60, 20);
+        ui.keySelector.setBounds (110, y + 14, 62, 22);
+        ui.modeSelector.setBounds (177, y + 14, 80, 22);
+        ui.bpmSlider.setBounds (262, y + 14, 85, 22);
+        ui.muteBtn.setBounds (352, y + 14, 24, 22);
+        ui.clearBtn.setBounds (380, y + 14, 24, 22);
 
-        ui.waveArea = juce::Rectangle<float> (415.0f, (float) (y + 6), (float) (getWidth() - 465), 44.0f);
+        ui.waveArea = juce::Rectangle<float> (415.0f, (float) (y + 4), (float) (getWidth() - 465), 42.0f);
     }
 
-    dragAudioButton.setBounds (getWidth() - 150, 575, 105, 24);
+    // Layer 4: Master Preview Track Layout
+    int masterY = startY + (3 * slotH) + 12;
+    previewTrackTitle.setBounds (45, masterY + 12, 100, 20);
+    directExportWavBtn.setBounds (150, masterY + 10, 110, 26);
+    previewWaveArea = juce::Rectangle<float> (275.0f, (float) masterY, (float) (getWidth() - 325), 46.0f);
 }
