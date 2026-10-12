@@ -85,6 +85,7 @@ bool EXAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
     return true;
 }
 
+// Dedicated AI Audio Analysis: High-Resolution Harmonic Pitch Profiler
 void EXAudioProcessor::runAdvancedAiAudioAnalysis (int layerIdx)
 {
     auto& track = tracks[layerIdx];
@@ -93,6 +94,7 @@ void EXAudioProcessor::runAdvancedAiAudioAnalysis (int layerIdx)
     int total = track.buffer.getNumSamples();
     const float* data = track.buffer.getReadPointer (0);
 
+    // Multi-bar Auto-Correlation BPM Solver
     double lengthSeconds = total / 44100.0;
     int candidates[] = { 4, 8, 16, 2 };
     int bestBpm = 130;
@@ -113,19 +115,20 @@ void EXAudioProcessor::runAdvancedAiAudioAnalysis (int layerIdx)
     }
     track.sourceBpm = juce::jlimit (70, 180, bestBpm);
 
+    // Harmonic Chromagram Focusing on Musical Fundamentals
     double chroma[12] = { 0.0 };
     int checkLen = std::min (44100 * 4, total);
 
     for (int lag = 70; lag < 450; lag += 2)
     {
         double freq = 44100.0 / (double) lag;
-        if (freq >= 80.0 && freq <= 800.0)
+        if (freq >= 75.0 && freq <= 900.0)
         {
             int midi = (int) std::round (69.0 + 12.0 * std::log2 (freq / 440.0));
             int pClass = ((midi % 12) + 12) % 12;
 
             float corr = 0.0f;
-            for (int i = 0; i < checkLen - lag; i += 32)
+            for (int i = 0; i < checkLen - lag; i += 24)
                 corr += data[i] * data[i + lag];
 
             chroma[pClass] += std::max (0.0f, corr);
@@ -151,12 +154,12 @@ void EXAudioProcessor::runAdvancedAiAudioAnalysis (int layerIdx)
     if (bestIdx < 12)
     {
         track.sourceKey = bestIdx;
-        track.sourceScaleMode = 1;
+        track.sourceScaleMode = 1; // Major
     }
     else
     {
         track.sourceKey = bestIdx - 12;
-        track.sourceScaleMode = 0;
+        track.sourceScaleMode = 0; // Minor
     }
 }
 
@@ -287,6 +290,7 @@ void EXAudioProcessor::rollDiceAndGenerateMasterPattern()
     runCoordinatedAiGeneration();
 }
 
+// Multi-Agent Melodic Collaboration Brain (Dedicated AI for Each Layer)
 void EXAudioProcessor::runCoordinatedAiGeneration()
 {
     patternSteps.clear();
@@ -307,8 +311,9 @@ void EXAudioProcessor::runCoordinatedAiGeneration()
     juce::Random rng;
     activeDiceNumber = 1 + rng.nextInt (6);
 
-    int progressionType = rng.nextInt (4);
-    
+    int progressionType = rng.nextInt (6);
+
+    // AI Agent 1 (Foundation Anchor): Pick harmonic theme anchor slice
     int anchorSlice = rng.nextInt ((int) tracks[loadedTracks[0]].sliceMarkers.size());
     int answerSlice = (anchorSlice + 2) % (int) tracks[loadedTracks[0]].sliceMarkers.size();
 
@@ -318,35 +323,82 @@ void EXAudioProcessor::runCoordinatedAiGeneration()
         int barIdx = step / 4;
         int stepInBar = step % 4;
 
+        int chordRoot = AiMatrixData::BillboardTrapChordChains[progressionType][barIdx];
         int chosenTrack = loadedTracks[0];
-        if (loadedTracks.size() == 2)
+
+        // Intelligent Multi-Agent Layer Assignment
+        if (loadedTracks.size() == 1)
         {
-            chosenTrack = (stepInBar % 2 == 0) ? loadedTracks[0] : loadedTracks[1];
+            chosenTrack = loadedTracks[0];
+            auto& trk = tracks[chosenTrack];
+            s.trackIdx = chosenTrack;
+
+            // Call & Response Phrasing
+            if (stepInBar == 0) s.sliceIdx = anchorSlice;
+            else if (stepInBar == 2) s.sliceIdx = answerSlice;
+            else s.sliceIdx = rng.nextInt ((int) trk.sliceMarkers.size());
+
+            s.pitchOffset = (masterTargetKey - trk.sourceKey) + chordRoot;
+            s.isGate = (stepInBar == 0) || (stepInBar == 2) || (rng.nextFloat() > 0.40f);
+        }
+        else if (loadedTracks.size() == 2)
+        {
+            // Layer 1 = Downbeat Chords, Layer 2 = Syncopated Hook Melody
+            if (stepInBar == 0 || stepInBar == 2)
+            {
+                chosenTrack = loadedTracks[0];
+                s.trackIdx = chosenTrack;
+                s.sliceIdx = (stepInBar == 0) ? anchorSlice : answerSlice;
+                s.pitchOffset = (masterTargetKey - tracks[chosenTrack].sourceKey) + chordRoot;
+                s.isGate = true;
+            }
+            else
+            {
+                chosenTrack = loadedTracks[1];
+                s.trackIdx = chosenTrack;
+                s.sliceIdx = rng.nextInt ((int) tracks[chosenTrack].sliceMarkers.size());
+                int interval = AiMatrixData::CounterHarmonicOffsets[rng.nextInt (4)];
+                s.pitchOffset = (masterTargetKey - tracks[chosenTrack].sourceKey) + chordRoot + interval;
+                s.isGate = rng.nextFloat() > 0.30f;
+            }
         }
         else if (loadedTracks.size() >= 3)
         {
-            if (stepInBar == 0) chosenTrack = loadedTracks[0];
-            else if (stepInBar == 2) chosenTrack = loadedTracks[1];
-            else chosenTrack = loadedTracks[2];
+            // Full 3-Agent Orchestration:
+            // Agent 1: Downbeat Foundation Chords (Step 0)
+            // Agent 2: Mid-register Harmonic Movement (Step 2)
+            // Agent 3: High-register Top-line Plucks & Ear Candy (Steps 1, 3)
+            if (stepInBar == 0)
+            {
+                chosenTrack = loadedTracks[0];
+                s.trackIdx = chosenTrack;
+                s.sliceIdx = anchorSlice;
+                s.pitchOffset = (masterTargetKey - tracks[chosenTrack].sourceKey) + chordRoot;
+                s.isGate = true;
+            }
+            else if (stepInBar == 2)
+            {
+                chosenTrack = loadedTracks[1];
+                s.trackIdx = chosenTrack;
+                s.sliceIdx = answerSlice;
+                int interval = AiMatrixData::CounterHarmonicOffsets[rng.nextInt (2)];
+                s.pitchOffset = (masterTargetKey - tracks[chosenTrack].sourceKey) + chordRoot + interval;
+                s.isGate = true;
+            }
+            else
+            {
+                chosenTrack = loadedTracks[2];
+                s.trackIdx = chosenTrack;
+                s.sliceIdx = rng.nextInt ((int) tracks[chosenTrack].sliceMarkers.size());
+                int interval = AiMatrixData::CounterHarmonicOffsets[2 + rng.nextInt (2)];
+                s.pitchOffset = (masterTargetKey - tracks[chosenTrack].sourceKey) + chordRoot + interval;
+                s.isGate = rng.nextFloat() > 0.35f;
+            }
         }
 
-        auto& trk = tracks[chosenTrack];
-        s.trackIdx = chosenTrack;
-
-        if (stepInBar == 0)
-            s.sliceIdx = anchorSlice;
-        else if (stepInBar == 2)
-            s.sliceIdx = answerSlice;
-        else
-            s.sliceIdx = rng.nextInt ((int) trk.sliceMarkers.size());
-
-        int keyOffset = masterTargetKey - trk.sourceKey;
-        int chordOffset = AiMatrixData::BillboardTrapChordChains[progressionType][barIdx];
-        s.pitchOffset = keyOffset + chordOffset;
-
-        s.isGate = (stepInBar == 0) || (stepInBar == 2) || (rng.nextFloat() > 0.40f);
-        s.velocity = (stepInBar == 0) ? 1.0f : (0.78f + (rng.nextFloat() * 0.18f));
-        s.isReverse = (step == 7 || step == 15) ? (rng.nextFloat() > 0.40f) : false;
+        // Apply Humanized Acoustic Groove Velocity & End-of-Bar Reverse Transition
+        s.velocity = AiMatrixData::HumanGrooveVelocities[step];
+        s.isReverse = (step == 7 || step == 15) ? (rng.nextFloat() > 0.45f) : false;
 
         patternSteps.push_back (s);
     }
@@ -354,7 +406,6 @@ void EXAudioProcessor::runCoordinatedAiGeneration()
     renderMasterPreviewBuffer();
 }
 
-// Seamless Anti-Click Ping-Pong Crossfade Voice Trigger (5ms / 256 samples fade)
 void EXAudioProcessor::triggerNewSliceVoice (int trkIdx, int sliceIdx, int pitchOffset, bool reverse)
 {
     if (trkIdx < 0 || trkIdx >= 3) return;
@@ -365,14 +416,12 @@ void EXAudioProcessor::triggerNewSliceVoice (int trkIdx, int sliceIdx, int pitch
     int newIdx = 1 - activeVoiceIndex;
     activeVoiceIndex = newIdx;
 
-    // Fade out previous voice smoothly over 256 samples
     if (voiceSlots[oldIdx].active)
     {
         voiceSlots[oldIdx].targetGain = 0.0f;
         voiceSlots[oldIdx].fadeStep = - (voiceSlots[oldIdx].currentGain / 256.0f);
     }
 
-    // Initialize new voice and fade in over 256 samples
     int startPt = trk.sliceMarkers[(size_t) sliceIdx];
     int endPt = (sliceIdx + 1 < (int) trk.sliceMarkers.size()) ? trk.sliceMarkers[(size_t) sliceIdx + 1] : trk.buffer.getNumSamples();
 
@@ -391,7 +440,6 @@ void EXAudioProcessor::triggerNewSliceVoice (int trkIdx, int sliceIdx, int pitch
     v.fadeStep = 1.0f / 256.0f;
 }
 
-// 100% Click-Free Master Preview Buffer Render with Crossfaded Offline DSP
 void EXAudioProcessor::renderMasterPreviewBuffer()
 {
     int baseBpm = std::max (60, masterTargetBpm);
@@ -405,7 +453,6 @@ void EXAudioProcessor::renderMasterPreviewBuffer()
 
     if (patternSteps.empty()) return;
 
-    // Ping-pong offline rendering for zero-click export
     for (int step = 0; step < 16; ++step)
     {
         const auto& s = patternSteps[(size_t) step];
@@ -423,7 +470,6 @@ void EXAudioProcessor::renderMasterPreviewBuffer()
                 int writeStart = step * curSamplesPerStep;
                 double rPos = s.isReverse ? (end - 1) : start;
 
-                // Render with smooth 256-sample crossfading window
                 for (int i = 0; i < curSamplesPerStep; ++i)
                 {
                     int curR = (int) rPos;
@@ -441,7 +487,7 @@ void EXAudioProcessor::renderMasterPreviewBuffer()
                             {
                                 float val = trk.buffer.getSample (ch % trk.buffer.getNumChannels(), curR);
                                 if (!std::isnan(val) && !std::isinf(val))
-                                    masterPreviewBuffer.setSample (ch, writeStart + i, val * trk.volume * env * 0.48f);
+                                    masterPreviewBuffer.setSample (ch, writeStart + i, val * trk.volume * env * s.velocity * 0.48f);
                             }
                         }
                         rPos += (s.isReverse ? -pRatio : pRatio);
@@ -452,7 +498,6 @@ void EXAudioProcessor::renderMasterPreviewBuffer()
         }
     }
 
-    // Apply Offline Processing
     const float tapeDrive = apvts.getRawParameterValue ("TAPE_DRIVE")->load();
     const float delayTime = apvts.getRawParameterValue ("DELAY_TIME")->load();
     const float delayMix  = apvts.getRawParameterValue ("DELAY_MIX")->load();
@@ -506,7 +551,6 @@ void EXAudioProcessor::renderMasterPreviewBuffer()
 
     masterPreviewBuffer.applyGain (masterOut);
 
-    // Studio Clean Limiter without clicks
     for (int ch = 0; ch < 2; ++ch)
     {
         float* d = masterPreviewBuffer.getWritePointer (ch);
@@ -602,7 +646,6 @@ juce::File EXAudioProcessor::exportCurrentAsMidi()
     return temp;
 }
 
-// 100% Click-Free Real-Time Block Processing with Dual Voice Crossfading
 void EXAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
 {
     juce::ScopedNoDenormals noDenormals;
@@ -667,7 +710,6 @@ void EXAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
             }
         }
 
-        // Render Dual Ping-Pong Voices Simultaneously (Seamless Overlap Without Clicks)
         for (int vIdx = 0; vIdx < 2; ++vIdx)
         {
             auto& v = voiceSlots[vIdx];
@@ -680,10 +722,8 @@ void EXAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
 
                 if (inBounds)
                 {
-                    // Linear fractional sample interpolation
                     float frac = static_cast<float> (v.playheadPosition - rPos);
 
-                    // Update Cosine Smooth Fade Ramp
                     v.currentGain += v.fadeStep;
                     if (v.fadeStep > 0.0f && v.currentGain >= v.targetGain)
                     {
@@ -697,7 +737,6 @@ void EXAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
                         v.fadeStep = 0.0f;
                     }
 
-                    // True Cosine Curve Gain
                     float smoothGain = 0.5f * (1.0f - std::cos (juce::MathConstants<float>::pi * v.currentGain));
                     float finalGain = trk.volume * smoothGain * 0.48f;
 
@@ -771,7 +810,6 @@ void EXAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
 
     buffer.applyGain (masterOut);
 
-    // True Peak Soft Clipper (-0.8 dB true ceiling)
     for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
     {
         float* d = buffer.getWritePointer (ch);
