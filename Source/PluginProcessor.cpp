@@ -213,15 +213,23 @@ static SliceAcousticProfile evaluateSliceAcoustics (const AudioLayerTrack& trk, 
 
     float attackMax = 0.0f;
     for (int i = 0; i < std::min (len, 256); ++i)
-        attackMax = std::max (attackMax, std::abs (data[i]));
+    {
+        float val = std::abs (data[i]);
+        if (!std::isnan (val) && !std::isinf (val))
+            attackMax = std::max (attackMax, val);
+    }
 
     float sumSq = 0.0f;
     float zeroCrossCount = 0.0f;
     for (int i = 0; i < len; ++i)
     {
-        sumSq += (data[i] * data[i]);
-        if (i > 0 && ((data[i] >= 0.0f && data[i - 1] < 0.0f) || (data[i] < 0.0f && data[i - 1] >= 0.0f)))
-            zeroCrossCount += 1.0f;
+        float val = data[i];
+        if (!std::isnan (val) && !std::isinf (val))
+        {
+            sumSq += (val * val);
+            if (i > 0 && ((val >= 0.0f && data[i - 1] < 0.0f) || (val < 0.0f && data[i - 1] >= 0.0f)))
+                zeroCrossCount += 1.0f;
+        }
     }
     float rms = std::sqrt (sumSq / (float) len);
 
@@ -330,9 +338,6 @@ void EXAudioProcessor::rollDiceAndGenerateMasterPattern()
     runCoordinatedAiGeneration();
 }
 
-// -----------------------------------------------------------------------------------------
-// REAL COHESIVE AI BRAIN: DYNAMIC TURN-TAKING, 3D PSYCHOACOUSTIC DEPTH & SUSTAINED NOTES
-// -----------------------------------------------------------------------------------------
 void EXAudioProcessor::runCoordinatedAiGeneration()
 {
     patternSteps.clear();
@@ -394,14 +399,14 @@ void EXAudioProcessor::runCoordinatedAiGeneration()
         int activeSlice = anchorSlice;
         int pitchDegree = 0;
 
-        if (stepInBar == 0) // Downbeats: Foundation anchor
+        if (stepInBar == 0)
         {
             isPlayStep = true;
             activeTrack = anchorTrack;
             activeSlice = anchorSlice;
             pitchDegree = chordRoot;
         }
-        else if (stepInBar == 2) // Syncopated Response
+        else if (stepInBar == 2)
         {
             if (rng.nextFloat() > 0.30f)
             {
@@ -414,7 +419,7 @@ void EXAudioProcessor::runCoordinatedAiGeneration()
                 pitchDegree = chordRoot + scaleNotesMinor[2 + rng.nextInt (3)];
             }
         }
-        else if (stepInBar == 3 && (bar == 1 || bar == 3)) // Ear Candy Turnaround
+        else if (stepInBar == 3 && (bar == 1 || bar == 3))
         {
             if (rng.nextFloat() > 0.35f && !ambientCandidates.empty())
             {
@@ -501,6 +506,7 @@ void EXAudioProcessor::triggerNewSliceVoice (int trkIdx, int sliceIdx, int pitch
     v.fadeStep = 1.0f / 256.0f;
 }
 
+// 100% THREAD-SAFE, DISTORTION-PROOF MASTER PREVIEW RENDERER
 void EXAudioProcessor::renderMasterPreviewBuffer()
 {
     int baseBpm = std::max (60, masterTargetBpm);
@@ -509,10 +515,16 @@ void EXAudioProcessor::renderMasterPreviewBuffer()
     int curSamplesPerStep = static_cast<int> (stepSec * getSampleRate());
     int total = curSamplesPerStep * 16;
 
-    masterPreviewBuffer.setSize (2, total);
-    masterPreviewBuffer.clear();
+    // Scratch buffer to avoid mutating active playback buffer in-flight
+    juce::AudioBuffer<float> scratchBuffer (2, total);
+    scratchBuffer.clear();
 
-    if (patternSteps.empty()) return;
+    if (patternSteps.empty())
+    {
+        masterPreviewBuffer.setSize (2, total);
+        masterPreviewBuffer.clear();
+        return;
+    }
 
     for (int step = 0; step < 16; ++step)
     {
@@ -556,9 +568,9 @@ void EXAudioProcessor::renderMasterPreviewBuffer()
 
                             if (!std::isnan(rawMono) && !std::isinf(rawMono))
                             {
-                                float sampleVal = rawMono * trk.volume * env * s.velocity * distDamp * 0.44f;
-                                masterPreviewBuffer.addSample (0, writeStart + i, sampleVal * gainL);
-                                masterPreviewBuffer.addSample (1, writeStart + i, sampleVal * gainR);
+                                float sampleVal = std::clamp (rawMono, -1.0f, 1.0f) * trk.volume * env * s.velocity * distDamp * 0.40f;
+                                scratchBuffer.addSample (0, writeStart + i, sampleVal * gainL);
+                                scratchBuffer.addSample (1, writeStart + i, sampleVal * gainR);
                             }
                         }
                         rPos += (s.isReverse ? -pRatio : pRatio);
@@ -579,15 +591,16 @@ void EXAudioProcessor::renderMasterPreviewBuffer()
 
     if (tapeDrive > 0.01f)
     {
-        float gain = 1.0f + (tapeDrive * 1.8f);
+        float gain = 1.0f + (tapeDrive * 1.5f);
         for (int ch = 0; ch < 2; ++ch)
         {
-            float* d = masterPreviewBuffer.getWritePointer (ch);
+            float* d = scratchBuffer.getWritePointer (ch);
             for (int i = 0; i < total; ++i)
                 d[i] = std::tanh (d[i] * gain);
         }
     }
 
+    // Strictly Clamped Offline Delay
     if (delayMix > 0.01f)
     {
         int dSamples = static_cast<int> (delayTime * getSampleRate());
@@ -597,16 +610,17 @@ void EXAudioProcessor::renderMasterPreviewBuffer()
             {
                 for (int i = dSamples; i < total; ++i)
                 {
-                    float dry = masterPreviewBuffer.getSample (ch, i);
-                    float wet = masterPreviewBuffer.getSample (ch, i - dSamples);
-                    masterPreviewBuffer.setSample (ch, i, dry + (wet * delayMix * 0.28f));
+                    float dry = scratchBuffer.getSample (ch, i);
+                    float wet = scratchBuffer.getSample (ch, i - dSamples);
+                    float mixed = dry + std::clamp (wet * delayMix * 0.25f, -0.6f, 0.6f);
+                    scratchBuffer.setSample (ch, i, mixed);
                 }
             }
         }
     }
 
     filter.setCutoffFrequency (cutoff);
-    juce::dsp::AudioBlock<float> blk (masterPreviewBuffer);
+    juce::dsp::AudioBlock<float> blk (scratchBuffer);
     juce::dsp::ProcessContextReplacing<float> pCtx (blk);
     filter.process (pCtx);
 
@@ -614,28 +628,38 @@ void EXAudioProcessor::renderMasterPreviewBuffer()
     {
         reverbParams.roomSize = rvbSize * 0.80f;
         reverbParams.damping  = 0.45f;
-        reverbParams.wetLevel = rvbMix * 0.45f;
+        reverbParams.wetLevel = rvbMix * 0.40f;
         reverbParams.dryLevel = 1.0f - (rvbMix * 0.20f);
         reverb.setParameters (reverbParams);
         reverb.process (pCtx);
     }
 
-    masterPreviewBuffer.applyGain (masterOut);
+    scratchBuffer.applyGain (masterOut);
 
+    // Final Sanity Pass: Protect against NaN/Inf and soft-limit to -1.0dB True Peak
     for (int ch = 0; ch < 2; ++ch)
     {
-        float* d = masterPreviewBuffer.getWritePointer (ch);
+        float* d = scratchBuffer.getWritePointer (ch);
         for (int i = 0; i < total; ++i)
         {
-            if (std::isnan(d[i]) || std::isinf(d[i])) { d[i] = 0.0f; continue; }
-            float absVal = std::abs (d[i]);
-            if (absVal > 0.82f)
+            if (std::isnan(d[i]) || std::isinf(d[i]))
             {
-                float excess = absVal - 0.82f;
-                d[i] = std::copysign (0.82f + 0.10f * std::tanh (excess * 2.0f), d[i]);
+                d[i] = 0.0f;
+                continue;
+            }
+            float absVal = std::abs (d[i]);
+            if (absVal > 0.80f)
+            {
+                float excess = absVal - 0.80f;
+                d[i] = std::copysign (0.80f + 0.10f * std::tanh (excess * 2.0f), d[i]);
             }
         }
     }
+
+    // Atomic Buffer Swap (Fixes UI Waveform Glitch & Audio Screaming permanently)
+    masterPreviewBuffer.setSize (2, total, false, true, true);
+    for (int ch = 0; ch < 2; ++ch)
+        masterPreviewBuffer.copyFrom (ch, 0, scratchBuffer, ch, 0, total);
 }
 
 void EXAudioProcessor::togglePlayback()
@@ -813,7 +837,7 @@ void EXAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
 
                     float smoothGain = 0.5f * (1.0f - std::cos (juce::MathConstants<float>::pi * v.currentGain));
                     float distDamp = 1.0f - (v.distance * 0.25f);
-                    float finalGain = trk.volume * smoothGain * distDamp * 0.44f;
+                    float finalGain = trk.volume * smoothGain * distDamp * 0.40f;
 
                     float s0 = trk.buffer.getSample (0, rPos);
                     float s1 = trk.buffer.getSample (0, rPos + 1);
@@ -828,7 +852,7 @@ void EXAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
 
                     if (!std::isnan(interpolated) && !std::isinf(interpolated))
                     {
-                        float val = interpolated * finalGain;
+                        float val = std::clamp (interpolated, -1.0f, 1.0f) * finalGain;
                         buffer.addSample (0, s, val * v.panL);
                         buffer.addSample (1, s, val * v.panR);
                     }
@@ -844,7 +868,7 @@ void EXAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
 
     if (tapeDrive > 0.01f)
     {
-        float gain = 1.0f + (tapeDrive * 1.8f);
+        float gain = 1.0f + (tapeDrive * 1.5f);
         for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
         {
             float* d = buffer.getWritePointer (ch);
@@ -864,12 +888,11 @@ void EXAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
                 float del = delayBuffer.getSample (ch, rIdx);
                 float dry = buffer.getSample (ch, i);
 
-                float toDelay = dry + (del * 0.25f);
-                if (std::isnan(toDelay) || std::isinf(toDelay) || std::abs(toDelay) > 1.0f)
-                    toDelay = std::clamp(toDelay, -1.0f, 1.0f);
+                float toDelay = dry + std::clamp (del * 0.25f, -0.6f, 0.6f);
+                toDelay = std::clamp (toDelay, -1.0f, 1.0f);
 
                 delayBuffer.setSample (ch, delayWriteIndex, toDelay);
-                buffer.setSample (ch, i, dry + (del * delayMix * 0.28f));
+                buffer.setSample (ch, i, dry + (del * delayMix * 0.25f));
             }
             delayWriteIndex = (delayWriteIndex + 1) % delayBuffer.getNumSamples();
         }
@@ -884,7 +907,7 @@ void EXAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
     {
         reverbParams.roomSize = rvbSize * 0.80f;
         reverbParams.damping  = 0.45f;
-        reverbParams.wetLevel = rvbMix * 0.45f;
+        reverbParams.wetLevel = rvbMix * 0.40f;
         reverbParams.dryLevel = 1.0f - (rvbMix * 0.20f);
         reverb.setParameters (reverbParams);
         reverb.process (pCtx);
@@ -897,12 +920,16 @@ void EXAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
         float* d = buffer.getWritePointer (ch);
         for (int i = 0; i < buffer.getNumSamples(); ++i)
         {
-            if (std::isnan(d[i]) || std::isinf(d[i])) { d[i] = 0.0f; continue; }
-            float absVal = std::abs (d[i]);
-            if (absVal > 0.82f)
+            if (std::isnan(d[i]) || std::isinf(d[i]))
             {
-                float excess = absVal - 0.82f;
-                d[i] = std::copysign (0.82f + 0.10f * std::tanh (excess * 2.0f), d[i]);
+                d[i] = 0.0f;
+                continue;
+            }
+            float absVal = std::abs (d[i]);
+            if (absVal > 0.80f)
+            {
+                float excess = absVal - 0.80f;
+                d[i] = std::copysign (0.80f + 0.10f * std::tanh (excess * 2.0f), d[i]);
             }
         }
     }
