@@ -177,7 +177,7 @@ void EXAudioProcessor::loadAudioFileToLayer (int layerIdx, const juce::File& fil
             masterTargetScaleMode = track.sourceScaleMode;
         }
 
-        runCoordinatedAiGeneration();
+        rollDiceAndGenerateMasterPattern();
         isPlayingPattern.store (false);
         isVoiceActive = false;
         playheadPosition = 0.0;
@@ -192,7 +192,7 @@ void EXAudioProcessor::clearLayer (int layerIdx)
     tracks[layerIdx].hasAudio = false;
     tracks[layerIdx].fileName = "EMPTY";
 
-    runCoordinatedAiGeneration();
+    rollDiceAndGenerateMasterPattern();
     isPlayingPattern.store (false);
     isVoiceActive = false;
 }
@@ -245,13 +245,8 @@ void EXAudioProcessor::setSlicePosition (int layerIdx, int markerIdx, int newSam
     }
 }
 
-// Pro Musical Motif AI Generator (Structured Trap / RnB Pocket)
+// Call & Response Melodic Engine
 void EXAudioProcessor::rollDiceAndGenerateMasterPattern()
-{
-    runCoordinatedAiGeneration();
-}
-
-void EXAudioProcessor::runCoordinatedAiGeneration()
 {
     patternSteps.clear();
 
@@ -273,7 +268,6 @@ void EXAudioProcessor::runCoordinatedAiGeneration()
 
     int progressionType = rng.nextInt (4);
     
-    // Choose Motif Theme Anchor Slice for Call & Response
     int anchorSlice = rng.nextInt ((int) tracks[loadedTracks[0]].sliceMarkers.size());
     int answerSlice = (anchorSlice + 2) % (int) tracks[loadedTracks[0]].sliceMarkers.size();
 
@@ -290,15 +284,14 @@ void EXAudioProcessor::runCoordinatedAiGeneration()
         }
         else if (loadedTracks.size() >= 3)
         {
-            if (stepInBar == 0) chosenTrack = loadedTracks[0];      // Bed foundation
-            else if (stepInBar == 2) chosenTrack = loadedTracks[1]; // Chords/Texture
-            else chosenTrack = loadedTracks[2];                    // Ear Candy hook
+            if (stepInBar == 0) chosenTrack = loadedTracks[0];
+            else if (stepInBar == 2) chosenTrack = loadedTracks[1];
+            else chosenTrack = loadedTracks[2];
         }
 
         auto& trk = tracks[chosenTrack];
         s.trackIdx = chosenTrack;
 
-        // Call & Response Melodic Phrasing (No Random Noise)
         if (stepInBar == 0)
             s.sliceIdx = anchorSlice;
         else if (stepInBar == 2)
@@ -310,7 +303,6 @@ void EXAudioProcessor::runCoordinatedAiGeneration()
         int chordOffset = AiMatrixData::BillboardTrapChordChains[progressionType][barIdx];
         s.pitchOffset = keyOffset + chordOffset;
 
-        // Syncopated Trap Pocket (Steps 0, 3, 6, 8, 10, 12, 14)
         s.isGate = (stepInBar == 0) || (stepInBar == 2) || (rng.nextFloat() > 0.40f);
         s.velocity = (stepInBar == 0) ? 1.0f : (0.78f + (rng.nextFloat() * 0.18f));
         s.isReverse = (step == 7 || step == 15) ? (rng.nextFloat() > 0.40f) : false;
@@ -358,7 +350,6 @@ void EXAudioProcessor::renderMasterPreviewBuffer()
                     {
                         if (writeStart + i < total && curR < trk.buffer.getNumSamples() && curR >= 0)
                         {
-                            // Anti-Click Cosine Boundary Ramp
                             float sliceEnv = 1.0f;
                             int distFromStart = i;
                             int distFromEnd = curSamplesPerStep - i;
@@ -397,7 +388,7 @@ void EXAudioProcessor::togglePlayback()
     }
 }
 
-// Unique Timestamp Hash prevents FL Studio Cache Locking!
+// Timestamp Hash to avoid FL Studio Cache Locking
 juce::File EXAudioProcessor::exportCurrentAsAudioWav()
 {
     juce::int64 timestamp = juce::Time::currentTimeMillis();
@@ -449,7 +440,6 @@ juce::File EXAudioProcessor::exportCurrentAsMidi()
     return temp;
 }
 
-// Zero-Click ProcessBlock with 128-sample Sine Envelopes
 void EXAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
 {
     juce::ScopedNoDenormals noDenormals;
@@ -546,7 +536,6 @@ void EXAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
                 {
                     float frac = static_cast<float> (playheadPosition - rPos);
 
-                    // 128-sample Attack Envelope (Instant de-click)
                     if (declickFadeGain < 1.0f)
                         declickFadeGain += (1.0f / 128.0f);
 
@@ -622,7 +611,6 @@ void EXAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
 
     buffer.applyGain (masterOut);
 
-    // Brickwall Soft Knee Limiter
     for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
     {
         float* d = buffer.getWritePointer (ch);
