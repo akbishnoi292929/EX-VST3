@@ -10,6 +10,8 @@ struct FlipStep
     int sliceIdx = 0;
     int pitchOffset = 0;
     float velocity = 1.0f;
+    float pan = 0.0f;           // -1.0 to +1.0
+    float distanceDepth = 0.0f; // 0.0 (Near) to 1.0 (Far/Ambient)
     bool isReverse = false;
     bool isGate = true;
 };
@@ -37,7 +39,6 @@ struct AudioLayerTrack
     juce::String fileName = "EMPTY";
 };
 
-// Ping-Pong Crossfade Voice to kill all chop clicks permanently
 struct SamplerVoiceSlot
 {
     int trackIdx = -1;
@@ -45,6 +46,9 @@ struct SamplerVoiceSlot
     int playheadEnd = 0;
     int playheadStart = 0;
     double speedRatio = 1.0;
+    float panL = 1.0f;
+    float panR = 1.0f;
+    float distance = 0.0f;
     bool isReverse = false;
     bool active = false;
     float currentGain = 0.0f;
@@ -116,7 +120,7 @@ private:
     juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
     void runAdvancedAiAudioAnalysis (int layerIdx);
 
-    void triggerNewSliceVoice (int trkIdx, int sliceIdx, int pitchOffset, bool reverse);
+    void triggerNewSliceVoice (int trkIdx, int sliceIdx, int pitchOffset, float pan, float depth, bool reverse);
 
     AudioLayerTrack tracks[3];
     juce::AudioSampleBuffer masterPreviewBuffer;
@@ -127,7 +131,6 @@ private:
     int samplesPerStep = 11025;
     int stepClock = 0;
 
-    // Dual Ping-Pong Voices for 100% Click-Free Seamless Crossfading
     SamplerVoiceSlot voiceSlots[2];
     int activeVoiceIndex = 0;
 
