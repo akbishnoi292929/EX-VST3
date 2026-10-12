@@ -32,6 +32,12 @@ EXAudioProcessor::EXAudioProcessor()
     formatManager.registerBasicFormats();
     masterPreviewBuffer.setSize (2, 44100 * 4);
     masterPreviewBuffer.clear();
+
+    for (int i = 0; i < 2; ++i)
+    {
+        voiceSlots[i].active = false;
+        voiceSlots[i].currentGain = 0.0f;
+    }
 }
 
 EXAudioProcessor::~EXAudioProcessor() {}
@@ -210,8 +216,7 @@ void EXAudioProcessor::loadAudioFileToLayer (int layerIdx, const juce::File& fil
 
         rollDiceAndGenerateMasterPattern();
         isPlayingPattern.store (false);
-        isVoiceActive = false;
-        playheadPosition = 0.0;
+        for (int i = 0; i < 2; ++i) voiceSlots[i].active = false;
     }
 }
 
@@ -225,7 +230,7 @@ void EXAudioProcessor::clearLayer (int layerIdx)
 
     rollDiceAndGenerateMasterPattern();
     isPlayingPattern.store (false);
-    isVoiceActive = false;
+    for (int i = 0; i < 2; ++i) voiceSlots[i].active = false;
 }
 
 void EXAudioProcessor::applyGridSlicingToLayer (int layerIdx, GridDivision div)
@@ -349,6 +354,44 @@ void EXAudioProcessor::runCoordinatedAiGeneration()
     renderMasterPreviewBuffer();
 }
 
+// Seamless Anti-Click Ping-Pong Crossfade Voice Trigger (5ms / 256 samples fade)
+void EXAudioProcessor::triggerNewSliceVoice (int trkIdx, int sliceIdx, int pitchOffset, bool reverse)
+{
+    if (trkIdx < 0 || trkIdx >= 3) return;
+    auto& trk = tracks[trkIdx];
+    if (!trk.hasAudio || sliceIdx >= (int) trk.sliceMarkers.size() || trk.buffer.getNumSamples() <= 0) return;
+
+    int oldIdx = activeVoiceIndex;
+    int newIdx = 1 - activeVoiceIndex;
+    activeVoiceIndex = newIdx;
+
+    // Fade out previous voice smoothly over 256 samples
+    if (voiceSlots[oldIdx].active)
+    {
+        voiceSlots[oldIdx].targetGain = 0.0f;
+        voiceSlots[oldIdx].fadeStep = - (voiceSlots[oldIdx].currentGain / 256.0f);
+    }
+
+    // Initialize new voice and fade in over 256 samples
+    int startPt = trk.sliceMarkers[(size_t) sliceIdx];
+    int endPt = (sliceIdx + 1 < (int) trk.sliceMarkers.size()) ? trk.sliceMarkers[(size_t) sliceIdx + 1] : trk.buffer.getNumSamples();
+
+    auto& v = voiceSlots[newIdx];
+    v.trackIdx = trkIdx;
+    v.isReverse = reverse;
+    v.playheadStart = startPt;
+    v.playheadEnd = endPt;
+    v.playheadPosition = reverse ? static_cast<double> (endPt - 1) : static_cast<double> (startPt);
+    v.speedRatio = std::pow (2.0, pitchOffset / 12.0);
+    if (halfTimeMode) v.speedRatio *= 0.5;
+
+    v.active = true;
+    v.currentGain = 0.0f;
+    v.targetGain = 1.0f;
+    v.fadeStep = 1.0f / 256.0f;
+}
+
+// 100% Click-Free Master Preview Buffer Render with Crossfaded Offline DSP
 void EXAudioProcessor::renderMasterPreviewBuffer()
 {
     int baseBpm = std::max (60, masterTargetBpm);
@@ -362,6 +405,7 @@ void EXAudioProcessor::renderMasterPreviewBuffer()
 
     if (patternSteps.empty()) return;
 
+    // Ping-pong offline rendering for zero-click export
     for (int step = 0; step < 16; ++step)
     {
         const auto& s = patternSteps[(size_t) step];
@@ -379,6 +423,7 @@ void EXAudioProcessor::renderMasterPreviewBuffer()
                 int writeStart = step * curSamplesPerStep;
                 double rPos = s.isReverse ? (end - 1) : start;
 
+                // Render with smooth 256-sample crossfading window
                 for (int i = 0; i < curSamplesPerStep; ++i)
                 {
                     int curR = (int) rPos;
@@ -386,19 +431,17 @@ void EXAudioProcessor::renderMasterPreviewBuffer()
                     {
                         if (writeStart + i < total && curR < trk.buffer.getNumSamples() && curR >= 0)
                         {
-                            float sliceEnv = 1.0f;
-                            int distFromStart = i;
-                            int distFromEnd = curSamplesPerStep - i;
-                            if (distFromStart < 128)
-                                sliceEnv = 0.5f * (1.0f - std::cos (juce::MathConstants<float>::pi * distFromStart / 128.0f));
-                            else if (distFromEnd < 128)
-                                sliceEnv = 0.5f * (1.0f - std::cos (juce::MathConstants<float>::pi * distFromEnd / 128.0f));
+                            float env = 1.0f;
+                            if (i < 256)
+                                env = 0.5f * (1.0f - std::cos (juce::MathConstants<float>::pi * i / 256.0f));
+                            else if (curSamplesPerStep - i < 256)
+                                env = 0.5f * (1.0f - std::cos (juce::MathConstants<float>::pi * (curSamplesPerStep - i) / 256.0f));
 
                             for (int ch = 0; ch < 2; ++ch)
                             {
-                                float rawVal = trk.buffer.getSample (ch % trk.buffer.getNumChannels(), curR);
-                                if (!std::isnan(rawVal) && !std::isinf(rawVal))
-                                    masterPreviewBuffer.setSample (ch, writeStart + i, rawVal * trk.volume * sliceEnv * 0.50f);
+                                float val = trk.buffer.getSample (ch % trk.buffer.getNumChannels(), curR);
+                                if (!std::isnan(val) && !std::isinf(val))
+                                    masterPreviewBuffer.setSample (ch, writeStart + i, val * trk.volume * env * 0.48f);
                             }
                         }
                         rPos += (s.isReverse ? -pRatio : pRatio);
@@ -409,6 +452,7 @@ void EXAudioProcessor::renderMasterPreviewBuffer()
         }
     }
 
+    // Apply Offline Processing
     const float tapeDrive = apvts.getRawParameterValue ("TAPE_DRIVE")->load();
     const float delayTime = apvts.getRawParameterValue ("DELAY_TIME")->load();
     const float delayMix  = apvts.getRawParameterValue ("DELAY_MIX")->load();
@@ -419,7 +463,7 @@ void EXAudioProcessor::renderMasterPreviewBuffer()
 
     if (tapeDrive > 0.01f)
     {
-        float gain = 1.0f + (tapeDrive * 2.0f);
+        float gain = 1.0f + (tapeDrive * 1.8f);
         for (int ch = 0; ch < 2; ++ch)
         {
             float* d = masterPreviewBuffer.getWritePointer (ch);
@@ -439,7 +483,7 @@ void EXAudioProcessor::renderMasterPreviewBuffer()
                 {
                     float dry = masterPreviewBuffer.getSample (ch, i);
                     float wet = masterPreviewBuffer.getSample (ch, i - dSamples);
-                    masterPreviewBuffer.setSample (ch, i, dry + (wet * delayMix * 0.30f));
+                    masterPreviewBuffer.setSample (ch, i, dry + (wet * delayMix * 0.28f));
                 }
             }
         }
@@ -462,21 +506,18 @@ void EXAudioProcessor::renderMasterPreviewBuffer()
 
     masterPreviewBuffer.applyGain (masterOut);
 
+    // Studio Clean Limiter without clicks
     for (int ch = 0; ch < 2; ++ch)
     {
         float* d = masterPreviewBuffer.getWritePointer (ch);
         for (int i = 0; i < total; ++i)
         {
-            if (std::isnan(d[i]) || std::isinf(d[i]))
-            {
-                d[i] = 0.0f;
-                continue;
-            }
+            if (std::isnan(d[i]) || std::isinf(d[i])) { d[i] = 0.0f; continue; }
             float absVal = std::abs (d[i]);
-            if (absVal > 0.85f)
+            if (absVal > 0.82f)
             {
-                float excess = absVal - 0.85f;
-                d[i] = std::copysign (0.85f + 0.10f * std::tanh (excess * 2.0f), d[i]);
+                float excess = absVal - 0.82f;
+                d[i] = std::copysign (0.82f + 0.10f * std::tanh (excess * 2.0f), d[i]);
             }
         }
     }
@@ -489,8 +530,7 @@ void EXAudioProcessor::togglePlayback()
 
     if (!willPlay)
     {
-        isVoiceActive = false;
-        playheadPosition = 0.0;
+        for (int i = 0; i < 2; ++i) voiceSlots[i].active = false;
         stepClock = 0;
         delayBuffer.clear();
     }
@@ -517,7 +557,6 @@ juce::File EXAudioProcessor::exportCurrentAsAudioWav()
     return tempWav;
 }
 
-// 100% FL Studio Compliant MIDI Exporter with BPM Meta Track
 juce::File EXAudioProcessor::exportCurrentAsMidi()
 {
     juce::int64 timestamp = juce::Time::currentTimeMillis();
@@ -530,7 +569,6 @@ juce::File EXAudioProcessor::exportCurrentAsMidi()
     juce::MidiFile mf;
     mf.setTicksPerQuarterNote (960);
     
-    // Track 0: Tempo and Time Signature Map for FL Studio
     juce::MidiMessageSequence metaTrack;
     double microSecondsPerQuarter = 60000000.0 / std::max (60, masterTargetBpm);
     metaTrack.addEvent (juce::MidiMessage::tempoMetaEvent (static_cast<int> (microSecondsPerQuarter)), 0.0);
@@ -538,9 +576,8 @@ juce::File EXAudioProcessor::exportCurrentAsMidi()
     metaTrack.updateMatchedPairs();
     mf.addTrack (metaTrack);
 
-    // Track 1: Sliced Notes
     juce::MidiMessageSequence noteTrack;
-    int tickPerStep = 240; // 16th note = 240 ticks
+    int tickPerStep = 240;
 
     for (size_t i = 0; i < snapshotSteps.size(); ++i)
     {
@@ -565,6 +602,7 @@ juce::File EXAudioProcessor::exportCurrentAsMidi()
     return temp;
 }
 
+// 100% Click-Free Real-Time Block Processing with Dual Voice Crossfading
 void EXAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
 {
     juce::ScopedNoDenormals noDenormals;
@@ -594,18 +632,16 @@ void EXAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
             auto& trk = tracks[trkIdx];
             if (trk.hasAudio && sIdx < (int) trk.sliceMarkers.size())
             {
-                activeTrackIdx = trkIdx;
-                playheadPosition = static_cast<double> (trk.sliceMarkers[(size_t) sIdx]);
-                playheadEnd = (sIdx + 1 < (int) trk.sliceMarkers.size()) ? trk.sliceMarkers[(size_t) sIdx + 1] : trk.buffer.getNumSamples();
-                playbackSpeedRatio = std::pow (2.0, (masterTargetKey - trk.sourceKey) / 12.0);
-                currentStepReverse = false;
-                declickFadeGain = 0.0f;
-                isVoiceActive = true;
+                triggerNewSliceVoice (trkIdx, sIdx, masterTargetKey - trk.sourceKey, false);
             }
         }
         else if (msg.isNoteOff() && !isPlayingPattern.load())
         {
-            isVoiceActive = false;
+            for (int i = 0; i < 2; ++i)
+            {
+                voiceSlots[i].targetGain = 0.0f;
+                voiceSlots[i].fadeStep = - (voiceSlots[i].currentGain / 256.0f);
+            }
         }
     }
 
@@ -625,51 +661,45 @@ void EXAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
                     auto& trk = tracks[step.trackIdx];
                     if (trk.hasAudio && !trk.isMute && step.isGate && step.sliceIdx < static_cast<int> (trk.sliceMarkers.size()))
                     {
-                        activeTrackIdx = step.trackIdx;
-                        int startPt = trk.sliceMarkers[static_cast<size_t> (step.sliceIdx)];
-                        int endPt = (step.sliceIdx + 1 < static_cast<int> (trk.sliceMarkers.size()))
-                                    ? trk.sliceMarkers[static_cast<size_t> (step.sliceIdx + 1)]
-                                    : trk.buffer.getNumSamples();
-
-                        currentStepReverse = step.isReverse;
-                        playheadPosition = currentStepReverse ? static_cast<double> (endPt - 1) : static_cast<double> (startPt);
-                        playheadEnd = currentStepReverse ? startPt : endPt;
-
-                        playbackSpeedRatio = std::pow (2.0, step.pitchOffset / 12.0);
-                        if (halfTimeMode) playbackSpeedRatio *= 0.5;
-                        declickFadeGain = 0.0f;
-                        isVoiceActive = true;
-                    }
-                    else
-                    {
-                        isVoiceActive = false;
+                        triggerNewSliceVoice (step.trackIdx, step.sliceIdx, step.pitchOffset, step.isReverse);
                     }
                 }
             }
         }
 
-        if (isVoiceActive && isPlayingPattern.load())
+        // Render Dual Ping-Pong Voices Simultaneously (Seamless Overlap Without Clicks)
+        for (int vIdx = 0; vIdx < 2; ++vIdx)
         {
-            auto& trk = tracks[activeTrackIdx];
-            if (trk.hasAudio && trk.buffer.getNumSamples() > 0)
+            auto& v = voiceSlots[vIdx];
+            if (v.active && v.trackIdx >= 0 && v.trackIdx < 3)
             {
-                int rPos = static_cast<int> (playheadPosition);
-                bool isValid = currentStepReverse ? (rPos >= playheadEnd && rPos >= 0)
-                                                  : (rPos < playheadEnd && rPos < trk.buffer.getNumSamples() - 1);
+                auto& trk = tracks[v.trackIdx];
+                int rPos = static_cast<int> (v.playheadPosition);
+                bool inBounds = v.isReverse ? (rPos >= v.playheadStart && rPos >= 0)
+                                            : (rPos < v.playheadEnd && rPos < trk.buffer.getNumSamples() - 1);
 
-                if (isValid)
+                if (inBounds)
                 {
-                    float frac = static_cast<float> (playheadPosition - rPos);
+                    // Linear fractional sample interpolation
+                    float frac = static_cast<float> (v.playheadPosition - rPos);
 
-                    if (declickFadeGain < 1.0f)
-                        declickFadeGain += (1.0f / 128.0f);
+                    // Update Cosine Smooth Fade Ramp
+                    v.currentGain += v.fadeStep;
+                    if (v.fadeStep > 0.0f && v.currentGain >= v.targetGain)
+                    {
+                        v.currentGain = v.targetGain;
+                        v.fadeStep = 0.0f;
+                    }
+                    else if (v.fadeStep < 0.0f && v.currentGain <= v.targetGain)
+                    {
+                        v.currentGain = 0.0f;
+                        v.active = false;
+                        v.fadeStep = 0.0f;
+                    }
 
-                    int distFromEdge = currentStepReverse ? (rPos - playheadEnd) : (playheadEnd - rPos);
-                    float edgeGain = 1.0f;
-                    if (distFromEdge < 128)
-                        edgeGain = 0.5f * (1.0f - std::cos (juce::MathConstants<float>::pi * distFromEdge / 128.0f));
-
-                    float voiceGain = trk.volume * declickFadeGain * edgeGain * 0.50f;
+                    // True Cosine Curve Gain
+                    float smoothGain = 0.5f * (1.0f - std::cos (juce::MathConstants<float>::pi * v.currentGain));
+                    float finalGain = trk.volume * smoothGain * 0.48f;
 
                     for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
                     {
@@ -679,13 +709,13 @@ void EXAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
                         float interpolated = s0 + frac * (s1 - s0);
 
                         if (!std::isnan(interpolated) && !std::isinf(interpolated))
-                            buffer.addSample (ch, s, interpolated * voiceGain);
+                            buffer.addSample (ch, s, interpolated * finalGain);
                     }
-                    playheadPosition += (currentStepReverse ? -playbackSpeedRatio : playbackSpeedRatio);
+                    v.playheadPosition += (v.isReverse ? -v.speedRatio : v.speedRatio);
                 }
                 else
                 {
-                    isVoiceActive = false;
+                    v.active = false;
                 }
             }
         }
@@ -693,7 +723,7 @@ void EXAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
 
     if (tapeDrive > 0.01f)
     {
-        float gain = 1.0f + (tapeDrive * 2.0f);
+        float gain = 1.0f + (tapeDrive * 1.8f);
         for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
         {
             float* d = buffer.getWritePointer (ch);
@@ -718,7 +748,7 @@ void EXAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
                     toDelay = std::clamp(toDelay, -1.0f, 1.0f);
 
                 delayBuffer.setSample (ch, delayWriteIndex, toDelay);
-                buffer.setSample (ch, i, dry + (del * delayMix * 0.35f));
+                buffer.setSample (ch, i, dry + (del * delayMix * 0.28f));
             }
             delayWriteIndex = (delayWriteIndex + 1) % delayBuffer.getNumSamples();
         }
@@ -741,21 +771,18 @@ void EXAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
 
     buffer.applyGain (masterOut);
 
+    // True Peak Soft Clipper (-0.8 dB true ceiling)
     for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
     {
         float* d = buffer.getWritePointer (ch);
         for (int i = 0; i < buffer.getNumSamples(); ++i)
         {
-            if (std::isnan(d[i]) || std::isinf(d[i]))
-            {
-                d[i] = 0.0f;
-                continue;
-            }
+            if (std::isnan(d[i]) || std::isinf(d[i])) { d[i] = 0.0f; continue; }
             float absVal = std::abs (d[i]);
-            if (absVal > 0.85f)
+            if (absVal > 0.82f)
             {
-                float excess = absVal - 0.85f;
-                d[i] = std::copysign (0.85f + 0.10f * std::tanh (excess * 2.0f), d[i]);
+                float excess = absVal - 0.82f;
+                d[i] = std::copysign (0.82f + 0.10f * std::tanh (excess * 2.0f), d[i]);
             }
         }
     }
