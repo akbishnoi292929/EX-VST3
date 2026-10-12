@@ -123,7 +123,7 @@ static int snapToZeroCrossing (const juce::AudioBuffer<float>& buf, int targetSa
     return bestSample;
 }
 
-// ADAPTIVE FULL-LENGTH TRANSIENT & GRID SLICER (COVERS ENTIRE WAVEFORM UNIFORMLY)
+// FULL-LENGTH ADAPTIVE TRANSIENT & GRID SLICER
 void EXAudioProcessor::applyGridSlicingToLayer (int layerIdx, GridDivision div)
 {
     if (layerIdx < 0 || layerIdx >= 3) return;
@@ -150,7 +150,6 @@ void EXAudioProcessor::applyGridSlicingToLayer (int layerIdx, GridDivision div)
             energyProfile.push_back (e);
         }
 
-        // Peak transient pickers across the full duration
         int lastCut = 0;
         for (size_t p = 1; p < energyProfile.size() - 1; ++p)
         {
@@ -162,7 +161,6 @@ void EXAudioProcessor::applyGridSlicingToLayer (int layerIdx, GridDivision div)
             }
         }
 
-        // If transients were too few or uneven, populate musical divisions evenly across the WHOLE file
         if (track.sliceMarkers.size() < 8)
         {
             track.sliceMarkers.clear();
@@ -173,7 +171,6 @@ void EXAudioProcessor::applyGridSlicingToLayer (int layerIdx, GridDivision div)
         return;
     }
 
-    // Grid modes: Divide the entire loop proportionally so nothing is cut off
     int numCuts = 16;
     if (div == GridDivision::Quarter)        numCuts = 4;
     else if (div == GridDivision::Eighth)    numCuts = 8;
@@ -321,7 +318,9 @@ void EXAudioProcessor::rollDiceAndGenerateMasterPattern()
     runCoordinatedAiGeneration();
 }
 
-// EQUAL PRIORITY MULTI-LAYER COLLABORATION BRAIN (TRUE CALL-AND-RESPONSE)
+// -----------------------------------------------------------------------------------------
+// DYNAMIC MULTI-ASPECT EXPLORATION ENGINE: SHUFFLES LAYER ROLES & ANATOMICAL SAMPLE ZONES
+// -----------------------------------------------------------------------------------------
 void EXAudioProcessor::runCoordinatedAiGeneration()
 {
     patternSteps.clear();
@@ -345,6 +344,37 @@ void EXAudioProcessor::runCoordinatedAiGeneration()
     int progressionType = rng.nextInt (6);
     const int minorScale[8] = { 0, 2, 3, 5, 7, 8, 10, 12 };
 
+    // 1. DYNAMICALLY SHUFFLE LAYER ROLES ON EVERY DICE ROLL
+    // roleOrder[0] = Lead/Intro Leader, roleOrder[1] = Counter/Body, roleOrder[2] = Fill/Outro
+    std::vector<int> roleOrder = loadedTracks;
+    for (int i = (int) roleOrder.size() - 1; i > 0; --i)
+    {
+        int j = rng.nextInt (i + 1);
+        std::swap (roleOrder[i], roleOrder[j]);
+    }
+
+    int leadTrack    = roleOrder[0];
+    int bodyTrack    = (roleOrder.size() > 1) ? roleOrder[1] : roleOrder[0];
+    int earCandyTrack = (roleOrder.size() > 2) ? roleOrder[2] : bodyTrack;
+
+    // 2. EXPLORE DIFFERENT ANATOMICAL ZONES OF THE SAMPLES
+    // (Head/Attack, Mid-Body, Tail-Atmosphere)
+    auto pickSliceFromZone = [&rng](const AudioLayerTrack& trk, int zoneIndex) -> int
+    {
+        int total = (int) trk.sliceMarkers.size();
+        if (total <= 1) return 0;
+        int zoneSize = std::max (1, total / 3);
+
+        if (zoneIndex == 0) // Zone 0: Front/Intro Head
+            return rng.nextInt (zoneSize);
+        else if (zoneIndex == 1) // Zone 1: Mid Body
+            return zoneSize + rng.nextInt (zoneSize);
+        else // Zone 2: Climax/Tail
+            return std::min (total - 1, (zoneSize * 2) + rng.nextInt (std::max (1, total - (zoneSize * 2))));
+    };
+
+    int arrangementStyle = rng.nextInt (3);
+
     for (int step = 0; step < 16; ++step)
     {
         FlipStep s;
@@ -353,69 +383,64 @@ void EXAudioProcessor::runCoordinatedAiGeneration()
         int rootChord = AiMatrixData::BillboardTrapChordChains[progressionType][bar];
 
         bool isPlay = false;
-        int activeTrack = loadedTracks[0];
+        int activeTrack = leadTrack;
         int activeSlice = 0;
         int intervalPitch = rootChord;
 
-        // TRUE EQUAL-WEIGHT COLLABORATION BETWEEN ALL LOADED LAYERS
-        if (loadedTracks.size() == 1)
+        // Dynamic Role Assignments per bar & beat based on the shuffled layers
+        if (arrangementStyle == 0) // Classic Hook: Lead leads Bar 0/2, Body leads Bar 1/3
         {
-            activeTrack = loadedTracks[0];
-            int totalSlices = (int) tracks[activeTrack].sliceMarkers.size();
-            activeSlice = (bar * 2 + beat) % totalSlices;
-        }
-        else if (loadedTracks.size() == 2)
-        {
-            // Bar 0 & 2 Lead = Layer 1, Bar 1 & 3 Lead = Layer 2 (Equal 50/50 Dialog!)
             if (beat == 0)
-            {
-                activeTrack = (bar % 2 == 0) ? loadedTracks[0] : loadedTracks[1];
-            }
+                activeTrack = (bar % 2 == 0) ? leadTrack : bodyTrack;
+            else if (beat == 2)
+                activeTrack = (bar % 2 == 0) ? bodyTrack : earCandyTrack;
             else
-            {
-                // Counter note comes from the OPPOSITE layer
-                activeTrack = (bar % 2 == 0) ? loadedTracks[1] : loadedTracks[0];
-            }
-            int totalSlices = (int) tracks[activeTrack].sliceMarkers.size();
-            activeSlice = rng.nextInt (totalSlices);
+                activeTrack = earCandyTrack;
         }
-        else if (loadedTracks.size() >= 3)
+        else if (arrangementStyle == 1) // Wave Call-and-Response: Sweeps across Lead -> Body -> Ear Candy
         {
-            // 3-Way Trio Arrangement:
-            // Bar 0: Layer 1 Lead | Bar 1: Layer 2 Lead | Bar 2: Layer 3 Lead | Bar 3: Tutti Combined
-            int leadTrack = loadedTracks[bar % 3];
-            int counterTrack = loadedTracks[(bar + 1) % 3];
-            activeTrack = (beat == 0) ? leadTrack : counterTrack;
-            int totalSlices = (int) tracks[activeTrack].sliceMarkers.size();
-            activeSlice = rng.nextInt (totalSlices);
+            if (beat == 0)      activeTrack = leadTrack;
+            else if (beat == 2) activeTrack = bodyTrack;
+            else                activeTrack = earCandyTrack;
+        }
+        else // Syncopated Flip: Body leads first bar, Lead drops on Bar 2
+        {
+            if (bar == 0 || bar == 2)
+                activeTrack = (beat == 0) ? bodyTrack : leadTrack;
+            else
+                activeTrack = (beat == 0) ? leadTrack : earCandyTrack;
         }
 
-        // Catchy Musical Phrasing (Beat 0 = Solid Hit, Beat 2 = Syncopation, Beat 3 = Melodic Turnaround)
+        // Pick slice from anatomical zones: Bar 0/1 explores Head & Mid, Bar 2/3 explores Mid & Tail
+        int sampleZone = (bar < 2) ? (beat == 0 ? 0 : 1) : (beat == 0 ? 1 : 2);
+        activeSlice = pickSliceFromZone (tracks[activeTrack], sampleZone);
+
+        // Musical Rhythm & Phrasing
         if (beat == 0)
         {
             isPlay = true;
             intervalPitch = rootChord;
-            s.pan = 0.0f;
+            s.pan = (activeTrack == leadTrack) ? 0.0f : ((bar % 2 == 0) ? -0.25f : 0.25f);
             s.velocity = 0.98f;
-            s.distanceDepth = 0.0f;
+            s.distanceDepth = 0.05f;
         }
         else if (beat == 2)
         {
             isPlay = true;
-            intervalPitch = rootChord + minorScale[2 + (step % 3)]; // Harmonics (3rd, 4th, 5th)
-            s.pan = (bar % 2 == 0) ? -0.35f : 0.35f;
+            intervalPitch = rootChord + minorScale[2 + (step % 3)]; // 3rd, 4th, or 5th harmonic
+            s.pan = (activeTrack == bodyTrack) ? 0.35f : -0.35f;
             s.velocity = 0.88f;
-            s.distanceDepth = 0.20f;
+            s.distanceDepth = 0.25f;
         }
         else if (beat == 3 && (bar == 1 || bar == 3))
         {
             if (rng.nextFloat() > 0.25f)
             {
                 isPlay = true;
-                intervalPitch = rootChord + minorScale[6]; // High resolution note
-                s.pan = (bar == 1) ? 0.55f : -0.55f;
+                intervalPitch = rootChord + minorScale[6]; // Minor 7th / Octave ear-candy
+                s.pan = (bar == 1) ? 0.60f : -0.60f;
                 s.velocity = 0.82f;
-                s.distanceDepth = 0.40f;
+                s.distanceDepth = 0.45f;
             }
         }
 
