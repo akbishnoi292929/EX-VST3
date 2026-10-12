@@ -34,25 +34,14 @@ namespace AiMatrixData
         { 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17, 6.33 }
     };
 
-    // Industry Billboard Trap / RnB / Emotional Guitar Progression Chains
+    // Commercial Acoustic Chord Chains (i - VI - III - VII, etc.)
     static const int BillboardTrapChordChains[6][4] =
     {
-        { 0, 8, 3, 10 },  // i - VI - III - VII (Dark Emotional Guitar)
-        { 0, 5, 8, 7 },   // i - iv - VI - V (Deep Acoustic Minor)
-        { 0, 3, 7, 10 },  // i - III - v - VII (Vintage Nostalgic Piano)
-        { 0, 8, 10, 7 },  // i - VI - VII - V (High-Energy Trap Lead)
-        { 0, 7, 8, 5 },   // i - v - VI - iv (Smooth Melodic Drill)
-        { 0, 3, 5, 8 }    // i - III - iv - VI (Lofi Chill Progression)
-    };
-
-    // Layer 2 Counter-Harmony Pitch Class Offsets (Consonant 3rds & 5ths)
-    static const int CounterHarmonicOffsets[4] = { 3, 7, 10, 12 };
-
-    // Humanized Velocity Weights for Acoustic Performance Realism
-    static const float HumanGrooveVelocities[16] = {
-        1.00f, 0.72f, 0.85f, 0.68f,
-        0.96f, 0.70f, 0.88f, 0.75f,
-        0.98f, 0.73f, 0.86f, 0.69f,
-        0.94f, 0.71f, 0.90f, 0.77f
+        { 0, 8, 3, 10 },
+        { 0, 5, 8, 7 },
+        { 0, 3, 7, 10 },
+        { 0, 8, 10, 7 },
+        { 0, 7, 8, 5 },
+        { 0, 3, 5, 8 }
     };
 }
