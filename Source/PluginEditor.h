@@ -17,6 +17,8 @@ struct LayerUIComponent
     juce::ComboBox keySelector;
     juce::ComboBox modeSelector;
     juce::Slider bpmSlider;
+    juce::Slider volSlider;
+    juce::Label volLabel;
     juce::TextButton muteBtn;
     juce::TextButton clearBtn;
     juce::Rectangle<float> waveArea;
@@ -52,10 +54,10 @@ private:
 
     LayerUIComponent layerUIs[3];
 
-    // Layer 4: Master AI Preview Track UI
     juce::Label previewTrackTitle;
     juce::Rectangle<float> previewWaveArea;
     juce::TextButton directExportWavBtn;
+    juce::TextButton exportStemsBtn;
 
     juce::Label masterTargetTitle;
     juce::ComboBox masterKeySelector;
@@ -85,6 +87,7 @@ private:
 
     using Attachment = juce::AudioProcessorValueTreeState::SliderAttachment;
     std::unique_ptr<Attachment> tapeAtt, delayTimeAtt, delayMixAtt, rvbSizeAtt, rvbMixAtt, filterAtt, masterAtt;
+    std::unique_ptr<Attachment> vol1Att, vol2Att, vol3Att;
 
     float radarAngle = 0.0f;
     int draggingLayerIdx = -1;
