@@ -33,6 +33,9 @@ juce_add_plugin(EX
     PRODUCT_NAME "EX"
 )
 
+# Bypass juce_vst3_helper crash during CI build
+juce_enable_vst3_manifest_generation(EX OFF)
+
 # Link ONNX Runtime if present
 if(DEFINED ONNXRUNTIME_ROOT_DIR AND EXISTS "${ONNXRUNTIME_ROOT_DIR}")
     include_directories("${ONNXRUNTIME_ROOT_DIR}/include")
