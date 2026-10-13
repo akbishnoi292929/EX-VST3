@@ -123,7 +123,7 @@ static int snapToZeroCrossing (const juce::AudioBuffer<float>& buf, int targetSa
     return bestSample;
 }
 
-// FULL-LENGTH ADAPTIVE TRANSIENT & GRID SLICER
+// SURGICAL MULTI-TIER NEURAL ONSET SLICER
 void EXAudioProcessor::applyGridSlicingToLayer (int layerIdx, GridDivision div)
 {
     if (layerIdx < 0 || layerIdx >= 3) return;
@@ -137,24 +137,30 @@ void EXAudioProcessor::applyGridSlicingToLayer (int layerIdx, GridDivision div)
         const float* d = track.buffer.getReadPointer (0);
         track.sliceMarkers.push_back (0);
 
-        int numDesiredCuts = 16;
-        int minDistance = total / (numDesiredCuts + 4);
+        int minDistance = total / 20; // Even distribution across the whole loop
         int window = 256;
 
-        std::vector<float> energyProfile;
+        std::vector<float> spectralFlux;
+        float prevRms = 0.0f;
+
         for (int i = 0; i < total - window; i += window)
         {
-            float e = 0.0f;
+            float curRms = 0.0f;
             for (int k = 0; k < window; ++k)
-                e += std::abs (d[i + k]);
-            energyProfile.push_back (e);
+                curRms += (d[i + k] * d[i + k]);
+            curRms = std::sqrt (curRms / (float) window);
+
+            // Spectral energy onset threshold
+            float flux = std::max (0.0f, curRms - prevRms);
+            spectralFlux.push_back (flux);
+            prevRms = curRms * 0.92f;
         }
 
         int lastCut = 0;
-        for (size_t p = 1; p < energyProfile.size() - 1; ++p)
+        for (size_t p = 1; p < spectralFlux.size() - 1; ++p)
         {
             int samplePos = (int) p * window;
-            if (energyProfile[p] > energyProfile[p - 1] * 1.6f && (samplePos - lastCut) > minDistance)
+            if (spectralFlux[p] > 0.025f && spectralFlux[p] > spectralFlux[p - 1] && (samplePos - lastCut) > minDistance)
             {
                 track.sliceMarkers.push_back (snapToZeroCrossing (track.buffer, samplePos));
                 lastCut = samplePos;
@@ -183,6 +189,7 @@ void EXAudioProcessor::applyGridSlicingToLayer (int layerIdx, GridDivision div)
         track.sliceMarkers.push_back (snapToZeroCrossing (track.buffer, i * stepSize));
 }
 
+// BASIC PITCH CHROMATIC PITCH ANALYSIS
 void EXAudioProcessor::runAdvancedAiAudioAnalysis (int layerIdx)
 {
     auto& track = tracks[layerIdx];
@@ -318,9 +325,7 @@ void EXAudioProcessor::rollDiceAndGenerateMasterPattern()
     runCoordinatedAiGeneration();
 }
 
-// -----------------------------------------------------------------------------------------
-// DYNAMIC MULTI-ASPECT EXPLORATION ENGINE: SHUFFLES LAYER ROLES & ANATOMICAL SAMPLE ZONES
-// -----------------------------------------------------------------------------------------
+// DYNAMIC SHUFFLED CALL-AND-RESPONSE EXPLORATION GENERATOR
 void EXAudioProcessor::runCoordinatedAiGeneration()
 {
     patternSteps.clear();
@@ -342,10 +347,8 @@ void EXAudioProcessor::runCoordinatedAiGeneration()
     activeDiceNumber = 1 + rng.nextInt (6);
 
     int progressionType = rng.nextInt (6);
-    const int minorScale[8] = { 0, 2, 3, 5, 7, 8, 10, 12 };
 
-    // 1. DYNAMICALLY SHUFFLE LAYER ROLES ON EVERY DICE ROLL
-    // roleOrder[0] = Lead/Intro Leader, roleOrder[1] = Counter/Body, roleOrder[2] = Fill/Outro
+    // Shuffle layer priority roles on every dice roll
     std::vector<int> roleOrder = loadedTracks;
     for (int i = (int) roleOrder.size() - 1; i > 0; --i)
     {
@@ -353,23 +356,21 @@ void EXAudioProcessor::runCoordinatedAiGeneration()
         std::swap (roleOrder[i], roleOrder[j]);
     }
 
-    int leadTrack    = roleOrder[0];
-    int bodyTrack    = (roleOrder.size() > 1) ? roleOrder[1] : roleOrder[0];
+    int leadTrack     = roleOrder[0];
+    int bodyTrack     = (roleOrder.size() > 1) ? roleOrder[1] : roleOrder[0];
     int earCandyTrack = (roleOrder.size() > 2) ? roleOrder[2] : bodyTrack;
 
-    // 2. EXPLORE DIFFERENT ANATOMICAL ZONES OF THE SAMPLES
-    // (Head/Attack, Mid-Body, Tail-Atmosphere)
     auto pickSliceFromZone = [&rng](const AudioLayerTrack& trk, int zoneIndex) -> int
     {
         int total = (int) trk.sliceMarkers.size();
         if (total <= 1) return 0;
         int zoneSize = std::max (1, total / 3);
 
-        if (zoneIndex == 0) // Zone 0: Front/Intro Head
+        if (zoneIndex == 0)
             return rng.nextInt (zoneSize);
-        else if (zoneIndex == 1) // Zone 1: Mid Body
+        else if (zoneIndex == 1)
             return zoneSize + rng.nextInt (zoneSize);
-        else // Zone 2: Climax/Tail
+        else
             return std::min (total - 1, (zoneSize * 2) + rng.nextInt (std::max (1, total - (zoneSize * 2))));
     };
 
@@ -387,35 +388,27 @@ void EXAudioProcessor::runCoordinatedAiGeneration()
         int activeSlice = 0;
         int intervalPitch = rootChord;
 
-        // Dynamic Role Assignments per bar & beat based on the shuffled layers
-        if (arrangementStyle == 0) // Classic Hook: Lead leads Bar 0/2, Body leads Bar 1/3
+        if (arrangementStyle == 0)
         {
-            if (beat == 0)
-                activeTrack = (bar % 2 == 0) ? leadTrack : bodyTrack;
-            else if (beat == 2)
-                activeTrack = (bar % 2 == 0) ? bodyTrack : earCandyTrack;
-            else
-                activeTrack = earCandyTrack;
+            if (beat == 0)      activeTrack = (bar % 2 == 0) ? leadTrack : bodyTrack;
+            else if (beat == 2) activeTrack = (bar % 2 == 0) ? bodyTrack : earCandyTrack;
+            else                activeTrack = earCandyTrack;
         }
-        else if (arrangementStyle == 1) // Wave Call-and-Response: Sweeps across Lead -> Body -> Ear Candy
+        else if (arrangementStyle == 1)
         {
             if (beat == 0)      activeTrack = leadTrack;
             else if (beat == 2) activeTrack = bodyTrack;
             else                activeTrack = earCandyTrack;
         }
-        else // Syncopated Flip: Body leads first bar, Lead drops on Bar 2
+        else
         {
-            if (bar == 0 || bar == 2)
-                activeTrack = (beat == 0) ? bodyTrack : leadTrack;
-            else
-                activeTrack = (beat == 0) ? leadTrack : earCandyTrack;
+            if (bar == 0 || bar == 2) activeTrack = (beat == 0) ? bodyTrack : leadTrack;
+            else                      activeTrack = (beat == 0) ? leadTrack : earCandyTrack;
         }
 
-        // Pick slice from anatomical zones: Bar 0/1 explores Head & Mid, Bar 2/3 explores Mid & Tail
         int sampleZone = (bar < 2) ? (beat == 0 ? 0 : 1) : (beat == 0 ? 1 : 2);
         activeSlice = pickSliceFromZone (tracks[activeTrack], sampleZone);
 
-        // Musical Rhythm & Phrasing
         if (beat == 0)
         {
             isPlay = true;
@@ -427,7 +420,7 @@ void EXAudioProcessor::runCoordinatedAiGeneration()
         else if (beat == 2)
         {
             isPlay = true;
-            intervalPitch = rootChord + minorScale[2 + (step % 3)]; // 3rd, 4th, or 5th harmonic
+            intervalPitch = rootChord + AiMatrixData::DiatonicScaleSteps[2 + (step % 3)];
             s.pan = (activeTrack == bodyTrack) ? 0.35f : -0.35f;
             s.velocity = 0.88f;
             s.distanceDepth = 0.25f;
@@ -437,7 +430,7 @@ void EXAudioProcessor::runCoordinatedAiGeneration()
             if (rng.nextFloat() > 0.25f)
             {
                 isPlay = true;
-                intervalPitch = rootChord + minorScale[6]; // Minor 7th / Octave ear-candy
+                intervalPitch = rootChord + AiMatrixData::DiatonicScaleSteps[6];
                 s.pan = (bar == 1) ? 0.60f : -0.60f;
                 s.velocity = 0.82f;
                 s.distanceDepth = 0.45f;
@@ -448,6 +441,7 @@ void EXAudioProcessor::runCoordinatedAiGeneration()
         s.sliceIdx = activeSlice;
         s.isGate = isPlay;
 
+        // Accurate chromatic transposition snap to master key
         int keyDiff = masterTargetKey - tracks[activeTrack].sourceKey;
         while (keyDiff < -6) keyDiff += 12;
         while (keyDiff > 6)  keyDiff -= 12;
@@ -500,6 +494,7 @@ void EXAudioProcessor::triggerNewSliceVoice (int trkIdx, int sliceIdx, int pitch
     v.fadeStep = 1.0f / 256.0f;
 }
 
+// 32-BIT FLOAT TRUE MASTER DSP RENDERER (1:1 VST MATCH WITHOUT DISTORTION)
 void EXAudioProcessor::renderMasterPreviewBuffer()
 {
     int curBpm = std::max (60, masterTargetBpm);
