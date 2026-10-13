@@ -7,6 +7,7 @@
 
 struct FlipStep
 {
+    int stepIndex = 0;
     int trackIdx = 0;
     int sliceIdx = 0;
     int pitchOffset = 0;
