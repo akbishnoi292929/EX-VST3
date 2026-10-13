@@ -33,16 +33,7 @@ juce_add_plugin(EX
     PRODUCT_NAME "EX"
 )
 
-# Disable manifest generation safely in JUCE 7
 set_target_properties(EX PROPERTIES JUCE_VST3_CAN_REPLACE_VST2 OFF)
-
-# Link ONNX Runtime if present
-if(DEFINED ONNXRUNTIME_ROOT_DIR AND EXISTS "${ONNXRUNTIME_ROOT_DIR}")
-    include_directories("${ONNXRUNTIME_ROOT_DIR}/include")
-    link_directories("${ONNXRUNTIME_ROOT_DIR}/lib")
-    target_link_libraries(EX PRIVATE "${ONNXRUNTIME_ROOT_DIR}/lib/onnxruntime.lib")
-    target_compile_definitions(EX PRIVATE HAS_ONNXRUNTIME=1)
-endif()
 
 file(GLOB_RECURSE SourceFiles CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/Source/*.cpp"
