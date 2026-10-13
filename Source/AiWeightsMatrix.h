@@ -3,7 +3,7 @@
 
 namespace AiMatrixData
 {
-    // High-Precision 24-Scale Krumhansl-Schmuckler Harmonic Neural Vectors
+    // Spotify Basic Pitch Style 24-Key Polyphonic Pitch Vectors
     static const double KrumhanslHarmonics[24][12] =
     {
         // 12 Major Scales
@@ -34,14 +34,17 @@ namespace AiMatrixData
         { 2.68, 3.52, 5.38, 2.60, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17, 6.33 }
     };
 
-    // Commercial Acoustic Chord Chains (i - VI - III - VII, etc.)
+    // Generative Cadence Chains (Deep Emotional RnB, Trap & Drill Progressions)
     static const int BillboardTrapChordChains[6][4] =
     {
-        { 0, 8, 3, 10 },
-        { 0, 5, 8, 7 },
-        { 0, 3, 7, 10 },
-        { 0, 8, 10, 7 },
-        { 0, 7, 8, 5 },
-        { 0, 3, 5, 8 }
+        { 0, 8, 3, 10 },  // i - VI - III - VII (Dark Melodic Trap)
+        { 0, 5, 8, 7 },   // i - iv - VI - V (Deep Acoustic Minor)
+        { 0, 3, 7, 10 },  // i - III - v - VII (RnB / Soul Guitar Hook)
+        { 0, 8, 10, 7 },  // i - VI - VII - V (High-Energy Melodic Drill)
+        { 0, 7, 8, 5 },   // i - v - VI - iv (Nostalgic Piano Cadence)
+        { 0, 3, 5, 8 }    // i - III - iv - VI (Lofi Chill Progression)
     };
+
+    // Harmonic Resolution Intervals for Lead & Counter Layers
+    static const int DiatonicScaleSteps[7] = { 0, 2, 3, 5, 7, 8, 10 };
 }
