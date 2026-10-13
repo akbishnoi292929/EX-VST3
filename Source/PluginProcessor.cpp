@@ -32,7 +32,6 @@ juce::AudioProcessorValueTreeState::ParameterLayout EXAudioProcessor::createPara
 
 EXAudioProcessor::EXAudioProcessor()
     : AudioProcessor (BusesProperties()
-                        .withInput  ("Input",  juce::AudioChannelSet::stereo(), true)
                         .withOutput ("Output", juce::AudioChannelSet::stereo(), true)),
       apvts (*this, nullptr, "Parameters", createParameterLayout())
 {
@@ -63,20 +62,20 @@ void EXAudioProcessor::changeProgramName (int, const juce::String&) {}
 void EXAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
     juce::dsp::ProcessSpec spec;
-    spec.sampleRate = sampleRate;
-    spec.maximumBlockSize = static_cast<juce::uint32> (samplesPerBlock);
+    spec.sampleRate = (sampleRate > 0.0) ? sampleRate : 44100.0;
+    spec.maximumBlockSize = static_cast<juce::uint32> (std::max (32, samplesPerBlock));
     spec.numChannels = 2;
 
     reverb.prepare (spec);
     filter.prepare (spec);
     filter.setType (juce::dsp::StateVariableTPTFilterType::lowpass);
 
-    delayBuffer.setSize (2, static_cast<int> (sampleRate * 2));
+    delayBuffer.setSize (2, static_cast<int> (spec.sampleRate * 2));
     delayBuffer.clear();
     delayWriteIndex = 0;
 
     int curBpm = std::max (60, masterTargetBpm);
-    samplesPerStep = static_cast<int> ((60.0 / curBpm) * 0.25 * sampleRate);
+    samplesPerStep = static_cast<int> ((60.0 / curBpm) * 0.25 * spec.sampleRate);
 }
 
 void EXAudioProcessor::releaseResources()
@@ -88,6 +87,7 @@ void EXAudioProcessor::releaseResources()
 
 bool EXAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
 {
+    // Pure Synth/Generator: Only Stereo Output supported
     if (layouts.getMainOutputChannelSet() != juce::AudioChannelSet::stereo())
         return false;
     return true;
@@ -196,7 +196,7 @@ void EXAudioProcessor::applyGridSlicingToLayer (int layerIdx, GridDivision div)
     else if (div == GridDivision::Eighth)    numCuts = 8;
     else if (div == GridDivision::Sixteenth) numCuts = 16;
     else if (div == GridDivision::Triplet1_3) numCuts = 6;
-    else if (div == GridDivision::Triplet1_6) numCuts = 12;
+    else if (div::Triplet1_6 == div)         numCuts = 12;
 
     int stepSize = total / numCuts;
     for (int i = 0; i < numCuts; ++i)
@@ -372,9 +372,6 @@ static int quantizeToMasterScale (int rawPitch, int targetRootKey, int targetMod
     return targetRootKey + octaves + bestDegree;
 }
 
-// -----------------------------------------------------------------------------------------
-// SUNO-STYLE AI MELODIC COMPOSER (CLEAN PIPELINE CONNECTED TO NEURAL ENGINE)
-// -----------------------------------------------------------------------------------------
 void EXAudioProcessor::runCoordinatedAiGeneration()
 {
     patternSteps.clear();
@@ -486,7 +483,8 @@ void EXAudioProcessor::renderMasterPreviewBuffer()
     int curBpm = std::max (60, masterTargetBpm);
     double stepSec = (60.0 / curBpm) * 0.25;
     if (halfTimeMode) stepSec *= 2.0;
-    int curSamplesPerStep = static_cast<int> (stepSec * getSampleRate());
+    double sRate = (getSampleRate() > 0.0) ? getSampleRate() : 44100.0;
+    int curSamplesPerStep = static_cast<int> (stepSec * sRate);
     int total = curSamplesPerStep * 64;
 
     juce::AudioBuffer<float> tempBuffer (2, total);
@@ -563,7 +561,7 @@ void EXAudioProcessor::renderMasterPreviewBuffer()
 
     if (delayMix > 0.01f)
     {
-        int dSamples = static_cast<int> (delayTime * getSampleRate());
+        int dSamples = static_cast<int> (delayTime * sRate);
         if (dSamples > 0 && dSamples < total)
         {
             for (int ch = 0; ch < 2; ++ch)
@@ -580,7 +578,7 @@ void EXAudioProcessor::renderMasterPreviewBuffer()
 
     if (rvbMix > 0.01f)
     {
-        int rvbOffset = static_cast<int> (0.045 * getSampleRate());
+        int rvbOffset = static_cast<int> (0.045 * sRate);
         for (int ch = 0; ch < 2; ++ch)
         {
             for (int i = rvbOffset; i < total; ++i)
@@ -654,7 +652,8 @@ juce::StringArray EXAudioProcessor::exportCurrentAsStems()
     int curBpm = std::max (60, masterTargetBpm);
     double stepSec = (60.0 / curBpm) * 0.25;
     if (halfTimeMode) stepSec *= 2.0;
-    int curSamplesPerStep = static_cast<int> (stepSec * getSampleRate());
+    double sRate = (getSampleRate() > 0.0) ? getSampleRate() : 44100.0;
+    int curSamplesPerStep = static_cast<int> (stepSec * sRate);
     int total = curSamplesPerStep * 64;
 
     for (int l = 0; l < 3; ++l)
@@ -800,9 +799,10 @@ void EXAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
     const float layerVols[3] = { vol1, vol2, vol3 };
 
     int curBpm = std::max (60, masterTargetBpm);
+    double sRate = (getSampleRate() > 0.0) ? getSampleRate() : 44100.0;
     double stepSeconds = (60.0 / curBpm) * 0.25;
     if (halfTimeMode) stepSeconds *= 2.0;
-    samplesPerStep = static_cast<int> (stepSeconds * getSampleRate());
+    samplesPerStep = static_cast<int> (stepSeconds * sRate);
 
     for (const auto meta : midiMessages)
     {
@@ -920,7 +920,7 @@ void EXAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
 
     if (delayMix > 0.01f && delayBuffer.getNumSamples() > 0)
     {
-        int dSamples = static_cast<int> (delayTime * getSampleRate());
+        int dSamples = static_cast<int> (delayTime * sRate);
         for (int i = 0; i < buffer.getNumSamples(); ++i)
         {
             for (int ch = 0; ch < buffer.getNumChannels(); ++ch)
