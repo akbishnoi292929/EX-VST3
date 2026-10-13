@@ -3,6 +3,7 @@
 #include <juce_audio_formats/juce_audio_formats.h>
 #include <juce_dsp/juce_dsp.h>
 #include "AiWeightsMatrix.h"
+#include "NeuralAudioEngine.h"
 
 struct FlipStep
 {
@@ -30,6 +31,7 @@ struct AudioLayerTrack
 {
     juce::AudioSampleBuffer buffer;
     std::vector<int> sliceMarkers;
+    std::vector<NeuralAudioEngine::HarmonicEmbedding> sliceEmbeddings;
     int sourceBpm = 120;
     int sourceKey = 0;
     int sourceScaleMode = 0;
@@ -120,6 +122,7 @@ public:
 private:
     juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
     void runAdvancedAiAudioAnalysis (int layerIdx);
+    void analyzeLayerSlicesWithNeuralEngine (int layerIdx);
 
     void triggerNewSliceVoice (int trkIdx, int sliceIdx, int pitchOffset, float pan, float depth, bool reverse);
 
@@ -134,6 +137,8 @@ private:
 
     SamplerVoiceSlot voiceSlots[2];
     int activeVoiceIndex = 0;
+
+    NeuralAudioEngine neuralEngine;
 
     juce::dsp::Reverb reverb;
     juce::dsp::Reverb::Parameters reverbParams;
