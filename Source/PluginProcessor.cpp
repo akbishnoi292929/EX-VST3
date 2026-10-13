@@ -123,6 +123,38 @@ static int snapToZeroCrossing (const juce::AudioBuffer<float>& buf, int targetSa
     return bestSample;
 }
 
+void EXAudioProcessor::analyzeLayerSlicesWithNeuralEngine (int layerIdx)
+{
+    if (layerIdx < 0 || layerIdx >= 3) return;
+    auto& track = tracks[layerIdx];
+    track.sliceEmbeddings.clear();
+
+    int numMarkers = static_cast<int> (track.sliceMarkers.size());
+    if (numMarkers == 0 || track.buffer.getNumSamples() == 0) return;
+
+    double sRate = (getSampleRate() > 0.0) ? getSampleRate() : 44100.0;
+    const float* data = track.buffer.getReadPointer (0);
+
+    for (int s = 0; s < numMarkers; ++s)
+    {
+        int st = track.sliceMarkers[static_cast<size_t> (s)];
+        int en = (s + 1 < numMarkers) ? track.sliceMarkers[static_cast<size_t> (s + 1)] : track.buffer.getNumSamples();
+        int len = std::min (en - st, 4096);
+
+        if (len > 32 && (st + len) <= track.buffer.getNumSamples())
+        {
+            auto emb = neuralEngine.analyzeSliceFeatures (data + st, len, sRate);
+            track.sliceEmbeddings.push_back (emb);
+        }
+        else
+        {
+            NeuralAudioEngine::HarmonicEmbedding fallback;
+            fallback.dominantMidiPitch = 60 + track.sourceKey;
+            track.sliceEmbeddings.push_back (fallback);
+        }
+    }
+}
+
 void EXAudioProcessor::applyGridSlicingToLayer (int layerIdx, GridDivision div)
 {
     if (layerIdx < 0 || layerIdx >= 3) return;
@@ -151,13 +183,13 @@ void EXAudioProcessor::applyGridSlicingToLayer (int layerIdx, GridDivision div)
                 prevLowPass = prevLowPass + 0.18f * (smp - prevLowPass);
                 energy += (prevLowPass * prevLowPass);
             }
-            bodyEnergyProfile.push_back (std::sqrt (energy / (float) window));
+            bodyEnergyProfile.push_back (std::sqrt (energy / static_cast<float> (window)));
         }
 
         int lastCut = 0;
         for (size_t p = 1; p < bodyEnergyProfile.size() - 1; ++p)
         {
-            int samplePos = (int) p * window;
+            int samplePos = static_cast<int> (p) * window;
             float surge = bodyEnergyProfile[p] - bodyEnergyProfile[p - 1];
 
             if (surge > 0.028f && bodyEnergyProfile[p] > 0.035f && (samplePos - lastCut) > minDistance)
@@ -174,6 +206,8 @@ void EXAudioProcessor::applyGridSlicingToLayer (int layerIdx, GridDivision div)
             for (int i = 0; i < 16; ++i)
                 track.sliceMarkers.push_back (snapToZeroCrossing (track.buffer, i * stepSize));
         }
+
+        analyzeLayerSlicesWithNeuralEngine (layerIdx);
         return;
     }
 
@@ -187,6 +221,8 @@ void EXAudioProcessor::applyGridSlicingToLayer (int layerIdx, GridDivision div)
     int stepSize = total / numCuts;
     for (int i = 0; i < numCuts; ++i)
         track.sliceMarkers.push_back (snapToZeroCrossing (track.buffer, i * stepSize));
+
+    analyzeLayerSlicesWithNeuralEngine (layerIdx);
 }
 
 void EXAudioProcessor::runAdvancedAiAudioAnalysis (int layerIdx)
@@ -212,7 +248,7 @@ void EXAudioProcessor::runAdvancedAiAudioAnalysis (int layerIdx)
         if (diff < minDiff)
         {
             minDiff = diff;
-            bestBpm = (int) std::round (calculatedBpm);
+            bestBpm = static_cast<int> (std::round (calculatedBpm));
         }
     }
     track.sourceBpm = juce::jlimit (70, 180, bestBpm);
@@ -222,10 +258,10 @@ void EXAudioProcessor::runAdvancedAiAudioAnalysis (int layerIdx)
 
     for (int lag = 70; lag < 450; lag += 2)
     {
-        double freq = 44100.0 / (double) lag;
+        double freq = 44100.0 / static_cast<double> (lag);
         if (freq >= 80.0 && freq <= 800.0)
         {
-            int midi = (int) std::round (69.0 + 12.0 * std::log2 (freq / 440.0));
+            int midi = static_cast<int> (std::round (69.0 + 12.0 * std::log2 (freq / 440.0)));
             int pClass = ((midi % 12) + 12) % 12;
 
             float corr = 0.0f;
@@ -299,6 +335,7 @@ void EXAudioProcessor::clearLayer (int layerIdx)
     if (layerIdx < 0 || layerIdx >= 3) return;
     tracks[layerIdx].buffer.setSize (2, 0);
     tracks[layerIdx].sliceMarkers.clear();
+    tracks[layerIdx].sliceEmbeddings.clear();
     tracks[layerIdx].hasAudio = false;
     tracks[layerIdx].fileName = "EMPTY";
 
@@ -316,6 +353,7 @@ void EXAudioProcessor::setSlicePosition (int layerIdx, int markerIdx, int newSam
         int snapped = snapToZeroCrossing (track.buffer, newSamplePos);
         track.sliceMarkers[static_cast<size_t> (markerIdx)] = juce::jlimit (0, track.buffer.getNumSamples() - 1, snapped);
         std::sort (track.sliceMarkers.begin(), track.sliceMarkers.end());
+        analyzeLayerSlicesWithNeuralEngine (layerIdx);
     }
 }
 
@@ -327,10 +365,10 @@ void EXAudioProcessor::rollDiceAndGenerateMasterPattern()
 static int quantizeToMasterScale (int rawPitch, int targetRootKey, int targetMode)
 {
     static const int scaleIntervals[4][7] = {
-        { 0, 2, 3, 5, 7, 8, 10 }, // Minor
-        { 0, 2, 4, 5, 7, 9, 11 }, // Major
-        { 0, 2, 3, 5, 7, 9, 10 }, // Dorian
-        { 0, 1, 3, 5, 7, 8, 10 }  // Phrygian
+        { 0, 2, 3, 5, 7, 8, 10 },
+        { 0, 2, 4, 5, 7, 9, 11 },
+        { 0, 2, 3, 5, 7, 9, 10 },
+        { 0, 1, 3, 5, 7, 8, 10 }
     };
 
     int modeIdx = juce::jlimit (0, 3, targetMode);
@@ -355,9 +393,7 @@ static int quantizeToMasterScale (int rawPitch, int targetRootKey, int targetMod
     return targetRootKey + octaves + bestDegree;
 }
 
-// -----------------------------------------------------------------------------------------
-// SUNO-STYLE NEURAL MELODIC RE-SYNTHESIS & CONTINUOUS COMPOSER (NO CHOPPY GAPS)
-// -----------------------------------------------------------------------------------------
+// NEURAL-GUIDED COMPOSITION ENGINE (LISTENS TO DOMINANT PITCH EMBEDDINGS)
 void EXAudioProcessor::runCoordinatedAiGeneration()
 {
     patternSteps.clear();
@@ -378,55 +414,59 @@ void EXAudioProcessor::runCoordinatedAiGeneration()
     juce::Random rng;
     activeDiceNumber = 1 + rng.nextInt (6);
 
-    // Analyze acoustic chops to find the clearest resonant attacks
-    struct TonalSlice
+    int progressionType = rng.nextInt (6);
+    const int emotionalDegrees[8] = { 0, 2, 3, 5, 7, 8, 10, 12 };
+
+    // Group slices by clarity and energy across loaded layers
+    struct CategorizedSlice
     {
         int trackIdx;
         int sliceIdx;
-        float energy;
+        int detectedMidi;
+        float clarity;
+        float rms;
     };
-    std::vector<TonalSlice> tonalCatalog;
+    std::vector<CategorizedSlice> neuralSlices;
 
     for (int t : loadedTracks)
     {
         const auto& trk = tracks[t];
-        int numS = (int) trk.sliceMarkers.size();
-        for (int s = 0; s < numS; ++s)
+        for (size_t s = 0; s < trk.sliceMarkers.size(); ++s)
         {
-            int st = trk.sliceMarkers[(size_t) s];
-            int en = (s + 1 < numS) ? trk.sliceMarkers[(size_t) (s + 1)] : trk.buffer.getNumSamples();
-            int checkLen = std::min (en - st, 1024);
-            if (checkLen <= 32) continue;
-
-            const float* d = trk.buffer.getReadPointer (0, st);
-            float sum = 0.0f;
-            for (int i = 0; i < checkLen; ++i) sum += std::abs (d[i]);
-
-            TonalSlice ts;
-            ts.trackIdx = t;
-            ts.sliceIdx = s;
-            ts.energy = sum / (float) checkLen;
-            tonalCatalog.push_back (ts);
+            CategorizedSlice cs;
+            cs.trackIdx = t;
+            cs.sliceIdx = static_cast<int> (s);
+            if (s < trk.sliceEmbeddings.size())
+            {
+                cs.detectedMidi = trk.sliceEmbeddings[s].dominantMidiPitch;
+                cs.clarity = trk.sliceEmbeddings[s].harmonicClarity;
+                cs.rms = trk.sliceEmbeddings[s].rmsEnergy;
+            }
+            else
+            {
+                cs.detectedMidi = 60 + trk.sourceKey;
+                cs.clarity = 0.5f;
+                cs.rms = 0.1f;
+            }
+            neuralSlices.push_back (cs);
         }
     }
 
-    if (tonalCatalog.empty())
+    if (neuralSlices.empty())
     {
         masterPreviewBuffer.clear();
         return;
     }
 
-    std::sort (tonalCatalog.begin(), tonalCatalog.end(), [](const TonalSlice& a, const TonalSlice& b) {
-        return a.energy > b.energy;
+    // Sort to prioritize clear tonal plucks as lead hooks
+    std::sort (neuralSlices.begin(), neuralSlices.end(), [](const CategorizedSlice& a, const CategorizedSlice& b) {
+        return (a.clarity * 0.6f + a.rms * 0.4f) > (b.clarity * 0.6f + b.rms * 0.4f);
     });
 
-    int progressionType = rng.nextInt (6);
+    const auto& primaryAnchor = neuralSlices[0];
+    const auto& secondaryChop = (neuralSlices.size() > 1) ? neuralSlices[1] : primaryAnchor;
+    const auto& colorChop     = (neuralSlices.size() > 2) ? neuralSlices[2] : secondaryChop;
 
-    // Diatonic intervals for expressive emotional lead curves
-    const int emotionalDegrees[8] = { 0, 2, 3, 5, 7, 8, 10, 12 };
-
-    // Continuous Melodic Phrasing across 64 Steps (Full 4 Bars)
-    // Slices are transformed into melodic notes that SUSTAIN and FLOW like a continuous guitar/piano
     for (int step = 0; step < 64; ++step)
     {
         FlipStep s;
@@ -435,65 +475,56 @@ void EXAudioProcessor::runCoordinatedAiGeneration()
         int chordRoot = AiMatrixData::BillboardTrapChordChains[progressionType][bar % 4];
 
         bool isPlay = false;
-        int activeTrack = tonalCatalog[0].trackIdx;
-        int activeSlice = tonalCatalog[0].sliceIdx;
-        int melodyNoteOffset = chordRoot;
+        int activeTrack = primaryAnchor.trackIdx;
+        int activeSlice = primaryAnchor.sliceIdx;
+        int targetMelodicDegree = chordRoot;
+        int baseSlicePitch = primaryAnchor.detectedMidi;
 
-        // Realistic Rhythmic Phrasing (Groove pocket: 0, 3, 6, 8, 11, 14)
-        // No large robotic gaps; notes sustain across beats
         if (stepInBar == 0 || stepInBar == 6 || stepInBar == 12)
         {
             isPlay = true;
-            // Downbeat & rhythmic anchors
-            melodyNoteOffset = chordRoot;
-            activeTrack = tonalCatalog[0].trackIdx;
-            activeSlice = tonalCatalog[0].sliceIdx;
-            s.pan = (stepInBar == 0) ? 0.0f : -0.20f;
+            targetMelodicDegree = chordRoot;
+            activeTrack = primaryAnchor.trackIdx;
+            activeSlice = primaryAnchor.sliceIdx;
+            baseSlicePitch = primaryAnchor.detectedMidi;
+            s.pan = (stepInBar == 0) ? 0.0f : -0.22f;
             s.velocity = 0.96f;
         }
         else if (stepInBar == 3 || stepInBar == 8)
         {
             isPlay = true;
-            // Melodic passing and emotional tension notes
             int degIdx = 2 + ((step / 8) % 4);
-            melodyNoteOffset = chordRoot + emotionalDegrees[degIdx];
-            
-            // Pick secondary tonal slice if available to add organic color
-            int chopIdx = (tonalCatalog.size() > 1) ? (1 + (step % (tonalCatalog.size() - 1))) : 0;
-            activeTrack = tonalCatalog[(size_t) chopIdx].trackIdx;
-            activeSlice = tonalCatalog[(size_t) chopIdx].sliceIdx;
-            s.pan = 0.25f;
+            targetMelodicDegree = chordRoot + emotionalDegrees[degIdx];
+            activeTrack = secondaryChop.trackIdx;
+            activeSlice = secondaryChop.sliceIdx;
+            baseSlicePitch = secondaryChop.detectedMidi;
+            s.pan = 0.28f;
             s.velocity = 0.88f;
         }
-        else if (stepInBar == 14)
+        else if (stepInBar == 14 && (bar == 1 || bar == 3))
         {
-            if (bar == 1 || bar == 3)
-            {
-                isPlay = true;
-                // Tonic Cadence resolution on bar turnaround
-                melodyNoteOffset = (bar == 3) ? 0 : chordRoot + emotionalDegrees[4];
-                int chopIdx = (tonalCatalog.size() > 2) ? 2 : 0;
-                activeTrack = tonalCatalog[(size_t) chopIdx].trackIdx;
-                activeSlice = tonalCatalog[(size_t) chopIdx].sliceIdx;
-                s.pan = 0.40f;
-                s.velocity = 0.84f;
-            }
+            isPlay = true;
+            targetMelodicDegree = (bar == 3) ? 0 : chordRoot + emotionalDegrees[4];
+            activeTrack = colorChop.trackIdx;
+            activeSlice = colorChop.sliceIdx;
+            baseSlicePitch = colorChop.detectedMidi;
+            s.pan = 0.45f;
+            s.velocity = 0.84f;
         }
 
         s.trackIdx = activeTrack;
         s.sliceIdx = activeSlice;
         s.isGate = isPlay;
 
-        // Accurate Key Quantization: Locks 100% to Master Target Key
-        int sourceKey = tracks[activeTrack].sourceKey;
-        int rawPitch = 60 + sourceKey + melodyNoteOffset;
-        int quantizedPitch = quantizeToMasterScale (rawPitch, masterTargetKey, masterTargetScaleMode);
+        // Neural Pitch Shifter: Calculates transposition based on the actual detected slice pitch
+        int desiredMidiNote = 60 + masterTargetKey + targetMelodicDegree;
+        int quantizedMidi = quantizeToMasterScale (desiredMidiNote, masterTargetKey, masterTargetScaleMode);
 
-        int finalPitchOffset = quantizedPitch - (60 + sourceKey);
-        while (finalPitchOffset < -8) finalPitchOffset += 12;
-        while (finalPitchOffset > 8)  finalPitchOffset -= 12;
+        int calculatedShift = quantizedMidi - baseSlicePitch;
+        while (calculatedShift < -8) calculatedShift += 12;
+        while (calculatedShift > 8)  calculatedShift -= 12;
 
-        s.pitchOffset = finalPitchOffset;
+        s.pitchOffset = calculatedShift;
         s.isReverse = false;
 
         patternSteps.push_back (s);
@@ -506,7 +537,7 @@ void EXAudioProcessor::triggerNewSliceVoice (int trkIdx, int sliceIdx, int pitch
 {
     if (trkIdx < 0 || trkIdx >= 3) return;
     auto& trk = tracks[trkIdx];
-    if (!trk.hasAudio || sliceIdx >= (int) trk.sliceMarkers.size() || trk.buffer.getNumSamples() <= 0) return;
+    if (!trk.hasAudio || sliceIdx >= static_cast<int> (trk.sliceMarkers.size()) || trk.buffer.getNumSamples() <= 0) return;
 
     int oldIdx = activeVoiceIndex;
     int newIdx = 1 - activeVoiceIndex;
@@ -518,8 +549,8 @@ void EXAudioProcessor::triggerNewSliceVoice (int trkIdx, int sliceIdx, int pitch
         voiceSlots[oldIdx].fadeStep = - (voiceSlots[oldIdx].currentGain / 256.0f);
     }
 
-    int startPt = trk.sliceMarkers[(size_t) sliceIdx];
-    int endPt = (sliceIdx + 1 < (int) trk.sliceMarkers.size()) ? trk.sliceMarkers[(size_t) sliceIdx + 1] : trk.buffer.getNumSamples();
+    int startPt = trk.sliceMarkers[static_cast<size_t> (sliceIdx)];
+    int endPt = (sliceIdx + 1 < static_cast<int> (trk.sliceMarkers.size())) ? trk.sliceMarkers[static_cast<size_t> (sliceIdx + 1)] : trk.buffer.getNumSamples();
 
     auto& v = voiceSlots[newIdx];
     v.trackIdx = trkIdx;
@@ -541,14 +572,13 @@ void EXAudioProcessor::triggerNewSliceVoice (int trkIdx, int sliceIdx, int pitch
     v.fadeStep = 1.0f / 256.0f;
 }
 
-// FULL 4-BARS CONTINUOUS LEGATO MASTER RENDERER
 void EXAudioProcessor::renderMasterPreviewBuffer()
 {
     int curBpm = std::max (60, masterTargetBpm);
     double stepSec = (60.0 / curBpm) * 0.25;
     if (halfTimeMode) stepSec *= 2.0;
     int curSamplesPerStep = static_cast<int> (stepSec * getSampleRate());
-    int total = curSamplesPerStep * 64; // FULL 4 BARS
+    int total = curSamplesPerStep * 64;
 
     juce::AudioBuffer<float> tempBuffer (2, total);
     tempBuffer.clear();
@@ -567,20 +597,19 @@ void EXAudioProcessor::renderMasterPreviewBuffer()
 
     for (int step = 0; step < 64; ++step)
     {
-        const auto& s = patternSteps[(size_t) step];
+        const auto& s = patternSteps[static_cast<size_t> (step)];
         if (s.isGate && s.trackIdx >= 0 && s.trackIdx < 3)
         {
             const auto& trk = tracks[s.trackIdx];
-            if (trk.hasAudio && !trk.isMute && s.sliceIdx < (int) trk.sliceMarkers.size() && trk.buffer.getNumSamples() > 0)
+            if (trk.hasAudio && !trk.isMute && s.sliceIdx < static_cast<int> (trk.sliceMarkers.size()) && trk.buffer.getNumSamples() > 0)
             {
-                int start = trk.sliceMarkers[(size_t) s.sliceIdx];
-                int end = (s.sliceIdx + 1 < (int) trk.sliceMarkers.size()) ? trk.sliceMarkers[(size_t) s.sliceIdx + 1] : trk.buffer.getNumSamples();
+                int start = trk.sliceMarkers[static_cast<size_t> (s.sliceIdx)];
+                int end = (s.sliceIdx + 1 < static_cast<int> (trk.sliceMarkers.size())) ? trk.sliceMarkers[static_cast<size_t> (s.sliceIdx + 1)] : trk.buffer.getNumSamples();
 
                 double pRatio = std::pow (2.0, s.pitchOffset / 12.0);
                 if (halfTimeMode) pRatio *= 0.5;
 
                 int writeStart = step * curSamplesPerStep;
-                // Allow note to sustain smoothly across up to 4 steps for natural melodic tail (No dead silence gaps)
                 int renderLength = std::min (curSamplesPerStep * 4, total - writeStart);
                 double rPos = start;
 
@@ -591,12 +620,11 @@ void EXAudioProcessor::renderMasterPreviewBuffer()
 
                 for (int i = 0; i < renderLength; ++i)
                 {
-                    int curR = (int) rPos;
+                    int curR = static_cast<int> (rPos);
                     if (curR < end && curR < trk.buffer.getNumSamples() - 1)
                     {
                         if (writeStart + i < total)
                         {
-                            // Smooth acoustic guitar envelope: fast attack, organic natural decay
                             float env = 1.0f;
                             if (i < 192)
                                 env = 0.5f * (1.0f - std::cos (juce::MathConstants<float>::pi * i / 192.0f));
@@ -732,14 +760,14 @@ juce::StringArray EXAudioProcessor::exportCurrentAsStems()
 
         for (int step = 0; step < 64; ++step)
         {
-            const auto& s = patternSteps[(size_t) step];
+            const auto& s = patternSteps[static_cast<size_t> (step)];
             if (s.isGate && s.trackIdx == l)
             {
                 const auto& trk = tracks[l];
-                if (s.sliceIdx < (int) trk.sliceMarkers.size() && trk.buffer.getNumSamples() > 0)
+                if (s.sliceIdx < static_cast<int> (trk.sliceMarkers.size()) && trk.buffer.getNumSamples() > 0)
                 {
-                    int start = trk.sliceMarkers[(size_t) s.sliceIdx];
-                    int end = (s.sliceIdx + 1 < (int) trk.sliceMarkers.size()) ? trk.sliceMarkers[(size_t) s.sliceIdx + 1] : trk.buffer.getNumSamples();
+                    int start = trk.sliceMarkers[static_cast<size_t> (s.sliceIdx)];
+                    int end = (s.sliceIdx + 1 < static_cast<int> (trk.sliceMarkers.size())) ? trk.sliceMarkers[static_cast<size_t> (s.sliceIdx + 1)] : trk.buffer.getNumSamples();
 
                     double pRatio = std::pow (2.0, s.pitchOffset / 12.0);
                     if (halfTimeMode) pRatio *= 0.5;
@@ -750,7 +778,7 @@ juce::StringArray EXAudioProcessor::exportCurrentAsStems()
 
                     for (int i = 0; i < renderLength; ++i)
                     {
-                        int curR = (int) rPos;
+                        int curR = static_cast<int> (rPos);
                         if (curR < end && curR < trk.buffer.getNumSamples() - 1 && writeStart + i < total)
                         {
                             float env = 1.0f;
@@ -816,7 +844,7 @@ juce::File EXAudioProcessor::exportCurrentAsMidi()
             int midiPan = juce::jlimit (0, 127, static_cast<int> ((s.pan + 1.0f) * 63.5f));
             trackSeq.addEvent (juce::MidiMessage::controllerEvent (1, 10, midiPan), startTick);
 
-            trackSeq.addEvent (juce::MidiMessage::noteOn (1, note, static_cast<juce::uint8> (juce::jlimit (1, 127, (int) (s.velocity * 124)))), startTick);
+            trackSeq.addEvent (juce::MidiMessage::noteOn (1, note, static_cast<juce::uint8> (juce::jlimit (1, 127, static_cast<int> (s.velocity * 124)))), startTick);
             trackSeq.addEvent (juce::MidiMessage::noteOff (1, note), endTick);
         }
     }
@@ -877,7 +905,7 @@ void EXAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mid
             int sIdx = raw % 12;
 
             auto& trk = tracks[trkIdx];
-            if (trk.hasAudio && sIdx < (int) trk.sliceMarkers.size())
+            if (trk.hasAudio && sIdx < static_cast<int> (trk.sliceMarkers.size()))
             {
                 triggerNewSliceVoice (trkIdx, sIdx, masterTargetKey - trk.sourceKey, 0.0f, 0.0f, false);
             }
