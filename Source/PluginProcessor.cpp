@@ -393,7 +393,9 @@ static int quantizeToMasterScale (int rawPitch, int targetRootKey, int targetMod
     return targetRootKey + octaves + bestDegree;
 }
 
-// NEURAL-GUIDED COMPOSITION ENGINE (LISTENS TO DOMINANT PITCH EMBEDDINGS)
+// -----------------------------------------------------------------------------------------
+// SUNO-STYLE AI MELODIC COMPOSER (GENERATES BRAND-NEW INSPIRED THEMES FROM SCRATCH)
+// -----------------------------------------------------------------------------------------
 void EXAudioProcessor::runCoordinatedAiGeneration()
 {
     patternSteps.clear();
@@ -414,120 +416,51 @@ void EXAudioProcessor::runCoordinatedAiGeneration()
     juce::Random rng;
     activeDiceNumber = 1 + rng.nextInt (6);
 
-    int progressionType = rng.nextInt (6);
-    const int emotionalDegrees[8] = { 0, 2, 3, 5, 7, 8, 10, 12 };
-
-    // Group slices by clarity and energy across loaded layers
-    struct CategorizedSlice
+    // Initialize 64 steps blank
+    patternSteps.resize (64);
+    for (int i = 0; i < 64; ++i)
     {
-        int trackIdx;
-        int sliceIdx;
-        int detectedMidi;
-        float clarity;
-        float rms;
-    };
-    std::vector<CategorizedSlice> neuralSlices;
-
-    for (int t : loadedTracks)
-    {
-        const auto& trk = tracks[t];
-        for (size_t s = 0; s < trk.sliceMarkers.size(); ++s)
-        {
-            CategorizedSlice cs;
-            cs.trackIdx = t;
-            cs.sliceIdx = static_cast<int> (s);
-            if (s < trk.sliceEmbeddings.size())
-            {
-                cs.detectedMidi = trk.sliceEmbeddings[s].dominantMidiPitch;
-                cs.clarity = trk.sliceEmbeddings[s].harmonicClarity;
-                cs.rms = trk.sliceEmbeddings[s].rmsEnergy;
-            }
-            else
-            {
-                cs.detectedMidi = 60 + trk.sourceKey;
-                cs.clarity = 0.5f;
-                cs.rms = 0.1f;
-            }
-            neuralSlices.push_back (cs);
-        }
+        patternSteps[i].isGate = false;
+        patternSteps[i].stepIndex = i;
     }
 
-    if (neuralSlices.empty())
+    // 1. Acoustic Timbre Extraction: Listen to the input sample
+    int mainTrack = loadedTracks[0];
+    const auto& trk = tracks[mainTrack];
+    double sRate = (getSampleRate() > 0.0) ? getSampleRate() : 44100.0;
+    
+    auto timbre = neuralEngine.extractAcousticTimbre (trk.buffer.getReadPointer(0), 
+                                                      std::min(trk.buffer.getNumSamples(), 44100 * 2), 
+                                                      sRate);
+
+    // 2. Compose Fresh Inspired Melody Arc via Neural Composer
+    int seed = rng.nextInt();
+    auto composedNotes = neuralEngine.composeInspiredMelody (timbre, masterTargetScaleMode, seed);
+
+    // 3. Map Composed Notes to Organic Acoustic Tone
+    for (const auto& note : composedNotes)
     {
-        masterPreviewBuffer.clear();
-        return;
-    }
+        if (note.stepIndex < 0 || note.stepIndex >= 64) continue;
 
-    // Sort to prioritize clear tonal plucks as lead hooks
-    std::sort (neuralSlices.begin(), neuralSlices.end(), [](const CategorizedSlice& a, const CategorizedSlice& b) {
-        return (a.clarity * 0.6f + a.rms * 0.4f) > (b.clarity * 0.6f + b.rms * 0.4f);
-    });
-
-    const auto& primaryAnchor = neuralSlices[0];
-    const auto& secondaryChop = (neuralSlices.size() > 1) ? neuralSlices[1] : primaryAnchor;
-    const auto& colorChop     = (neuralSlices.size() > 2) ? neuralSlices[2] : secondaryChop;
-
-    for (int step = 0; step < 64; ++step)
-    {
         FlipStep s;
-        int bar = step / 16;
-        int stepInBar = step % 16;
-        int chordRoot = AiMatrixData::BillboardTrapChordChains[progressionType][bar % 4];
-
-        bool isPlay = false;
-        int activeTrack = primaryAnchor.trackIdx;
-        int activeSlice = primaryAnchor.sliceIdx;
-        int targetMelodicDegree = chordRoot;
-        int baseSlicePitch = primaryAnchor.detectedMidi;
-
-        if (stepInBar == 0 || stepInBar == 6 || stepInBar == 12)
-        {
-            isPlay = true;
-            targetMelodicDegree = chordRoot;
-            activeTrack = primaryAnchor.trackIdx;
-            activeSlice = primaryAnchor.sliceIdx;
-            baseSlicePitch = primaryAnchor.detectedMidi;
-            s.pan = (stepInBar == 0) ? 0.0f : -0.22f;
-            s.velocity = 0.96f;
-        }
-        else if (stepInBar == 3 || stepInBar == 8)
-        {
-            isPlay = true;
-            int degIdx = 2 + ((step / 8) % 4);
-            targetMelodicDegree = chordRoot + emotionalDegrees[degIdx];
-            activeTrack = secondaryChop.trackIdx;
-            activeSlice = secondaryChop.sliceIdx;
-            baseSlicePitch = secondaryChop.detectedMidi;
-            s.pan = 0.28f;
-            s.velocity = 0.88f;
-        }
-        else if (stepInBar == 14 && (bar == 1 || bar == 3))
-        {
-            isPlay = true;
-            targetMelodicDegree = (bar == 3) ? 0 : chordRoot + emotionalDegrees[4];
-            activeTrack = colorChop.trackIdx;
-            activeSlice = colorChop.sliceIdx;
-            baseSlicePitch = colorChop.detectedMidi;
-            s.pan = 0.45f;
-            s.velocity = 0.84f;
-        }
-
-        s.trackIdx = activeTrack;
-        s.sliceIdx = activeSlice;
-        s.isGate = isPlay;
-
-        // Neural Pitch Shifter: Calculates transposition based on the actual detected slice pitch
-        int desiredMidiNote = 60 + masterTargetKey + targetMelodicDegree;
-        int quantizedMidi = quantizeToMasterScale (desiredMidiNote, masterTargetKey, masterTargetScaleMode);
-
-        int calculatedShift = quantizedMidi - baseSlicePitch;
-        while (calculatedShift < -8) calculatedShift += 12;
-        while (calculatedShift > 8)  calculatedShift -= 12;
-
-        s.pitchOffset = calculatedShift;
+        s.trackIdx = mainTrack;
+        s.sliceIdx = rng.nextInt (std::max(1, (int) trk.sliceMarkers.size()));
+        s.isGate = true;
+        s.velocity = note.velocity;
+        s.pan = note.pan;
+        s.distanceDepth = 0.1f;
         s.isReverse = false;
 
-        patternSteps.push_back (s);
+        // Accurate Semitone Transposition Lock
+        int targetMidi = 60 + masterTargetKey + note.scaleDegree;
+        int quantizedMidi = quantizeToMasterScale (targetMidi, masterTargetKey, masterTargetScaleMode);
+
+        int pitchOffset = quantizedMidi - (60 + trk.sourceKey);
+        while (pitchOffset < -8) pitchOffset += 12;
+        while (pitchOffset > 8)  pitchOffset -= 12;
+
+        s.pitchOffset = pitchOffset;
+        patternSteps[(size_t) note.stepIndex] = s;
     }
 
     renderMasterPreviewBuffer();
@@ -572,13 +505,14 @@ void EXAudioProcessor::triggerNewSliceVoice (int trkIdx, int sliceIdx, int pitch
     v.fadeStep = 1.0f / 256.0f;
 }
 
+// CONTINUOUS ACOUSTIC LEGATO FLOW RENDERER (NO CHOPPY GAPS)
 void EXAudioProcessor::renderMasterPreviewBuffer()
 {
     int curBpm = std::max (60, masterTargetBpm);
     double stepSec = (60.0 / curBpm) * 0.25;
     if (halfTimeMode) stepSec *= 2.0;
     int curSamplesPerStep = static_cast<int> (stepSec * getSampleRate());
-    int total = curSamplesPerStep * 64;
+    int total = curSamplesPerStep * 64; // FULL 4 BARS
 
     juce::AudioBuffer<float> tempBuffer (2, total);
     tempBuffer.clear();
@@ -610,7 +544,8 @@ void EXAudioProcessor::renderMasterPreviewBuffer()
                 if (halfTimeMode) pRatio *= 0.5;
 
                 int writeStart = step * curSamplesPerStep;
-                int renderLength = std::min (curSamplesPerStep * 4, total - writeStart);
+                // Notes sustain naturally into the next phrase (Zero Dead Silence Gaps)
+                int renderLength = std::min (curSamplesPerStep * 5, total - writeStart);
                 double rPos = start;
 
                 float panAngle = (s.pan + 1.0f) * 0.25f * juce::MathConstants<float>::pi;
@@ -625,11 +560,12 @@ void EXAudioProcessor::renderMasterPreviewBuffer()
                     {
                         if (writeStart + i < total)
                         {
+                            // Expressive acoustic envelope with gentle decay
                             float env = 1.0f;
-                            if (i < 192)
-                                env = 0.5f * (1.0f - std::cos (juce::MathConstants<float>::pi * i / 192.0f));
-                            else if (renderLength - i < 1024)
-                                env = 0.5f * (1.0f - std::cos (juce::MathConstants<float>::pi * (renderLength - i) / 1024.0f));
+                            if (i < 160)
+                                env = 0.5f * (1.0f - std::cos (juce::MathConstants<float>::pi * i / 160.0f));
+                            else if (renderLength - i < 1200)
+                                env = 0.5f * (1.0f - std::cos (juce::MathConstants<float>::pi * (renderLength - i) / 1200.0f));
 
                             float rawL = trk.buffer.getSample (0, curR);
                             float rawR = (trk.buffer.getNumChannels() > 1) ? trk.buffer.getSample (1, curR) : rawL;
@@ -760,29 +696,29 @@ juce::StringArray EXAudioProcessor::exportCurrentAsStems()
 
         for (int step = 0; step < 64; ++step)
         {
-            const auto& s = patternSteps[static_cast<size_t> (step)];
+            const auto& s = patternSteps[(size_t) step];
             if (s.isGate && s.trackIdx == l)
             {
                 const auto& trk = tracks[l];
-                if (s.sliceIdx < static_cast<int> (trk.sliceMarkers.size()) && trk.buffer.getNumSamples() > 0)
+                if (s.sliceIdx < (int) trk.sliceMarkers.size() && trk.buffer.getNumSamples() > 0)
                 {
-                    int start = trk.sliceMarkers[static_cast<size_t> (s.sliceIdx)];
-                    int end = (s.sliceIdx + 1 < static_cast<int> (trk.sliceMarkers.size())) ? trk.sliceMarkers[static_cast<size_t> (s.sliceIdx + 1)] : trk.buffer.getNumSamples();
+                    int start = trk.sliceMarkers[(size_t) s.sliceIdx];
+                    int end = (s.sliceIdx + 1 < (int) trk.sliceMarkers.size()) ? trk.sliceMarkers[(size_t) s.sliceIdx + 1] : trk.buffer.getNumSamples();
 
                     double pRatio = std::pow (2.0, s.pitchOffset / 12.0);
                     if (halfTimeMode) pRatio *= 0.5;
 
                     int writeStart = step * curSamplesPerStep;
-                    int renderLength = std::min (curSamplesPerStep * 4, total - writeStart);
+                    int renderLength = std::min (curSamplesPerStep * 5, total - writeStart);
                     double rPos = start;
 
                     for (int i = 0; i < renderLength; ++i)
                     {
-                        int curR = static_cast<int> (rPos);
+                        int curR = (int) rPos;
                         if (curR < end && curR < trk.buffer.getNumSamples() - 1 && writeStart + i < total)
                         {
                             float env = 1.0f;
-                            if (i < 192) env = 0.5f * (1.0f - std::cos (juce::MathConstants<float>::pi * i / 192.0f));
+                            if (i < 160) env = 0.5f * (1.0f - std::cos (juce::MathConstants<float>::pi * i / 160.0f));
                             float rawL = trk.buffer.getSample (0, curR);
                             float rawR = (trk.buffer.getNumChannels() > 1) ? trk.buffer.getSample (1, curR) : rawL;
                             float smp = ((rawL + rawR) * 0.5f) * trk.volume * env * s.velocity * 0.85f;
@@ -839,7 +775,7 @@ juce::File EXAudioProcessor::exportCurrentAsMidi()
             while (note > 84) note -= 12;
 
             double startTick = static_cast<double> (i * ticksPerStep);
-            double endTick = startTick + (ticksPerStep * 3 - 20);
+            double endTick = startTick + (ticksPerStep * 4 - 20);
 
             int midiPan = juce::jlimit (0, 127, static_cast<int> ((s.pan + 1.0f) * 63.5f));
             trackSeq.addEvent (juce::MidiMessage::controllerEvent (1, 10, midiPan), startTick);
