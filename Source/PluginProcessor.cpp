@@ -127,32 +127,12 @@ void EXAudioProcessor::analyzeLayerSlicesWithNeuralEngine (int layerIdx)
 {
     if (layerIdx < 0 || layerIdx >= 3) return;
     auto& track = tracks[layerIdx];
-    track.sliceEmbeddings.clear();
-
-    int numMarkers = static_cast<int> (track.sliceMarkers.size());
-    if (numMarkers == 0 || track.buffer.getNumSamples() == 0) return;
+    if (track.buffer.getNumSamples() == 0) return;
 
     double sRate = (getSampleRate() > 0.0) ? getSampleRate() : 44100.0;
-    const float* data = track.buffer.getReadPointer (0);
-
-    for (int s = 0; s < numMarkers; ++s)
-    {
-        int st = track.sliceMarkers[static_cast<size_t> (s)];
-        int en = (s + 1 < numMarkers) ? track.sliceMarkers[static_cast<size_t> (s + 1)] : track.buffer.getNumSamples();
-        int len = std::min (en - st, 4096);
-
-        if (len > 32 && (st + len) <= track.buffer.getNumSamples())
-        {
-            auto emb = neuralEngine.analyzeSliceFeatures (data + st, len, sRate);
-            track.sliceEmbeddings.push_back (emb);
-        }
-        else
-        {
-            NeuralAudioEngine::HarmonicEmbedding fallback;
-            fallback.dominantMidiPitch = 60 + track.sourceKey;
-            track.sliceEmbeddings.push_back (fallback);
-        }
-    }
+    track.timbreProfile = neuralEngine.extractAcousticTimbre (track.buffer.getReadPointer (0),
+                                                              std::min (track.buffer.getNumSamples(), 44100 * 2),
+                                                              sRate);
 }
 
 void EXAudioProcessor::applyGridSlicingToLayer (int layerIdx, GridDivision div)
@@ -335,7 +315,6 @@ void EXAudioProcessor::clearLayer (int layerIdx)
     if (layerIdx < 0 || layerIdx >= 3) return;
     tracks[layerIdx].buffer.setSize (2, 0);
     tracks[layerIdx].sliceMarkers.clear();
-    tracks[layerIdx].sliceEmbeddings.clear();
     tracks[layerIdx].hasAudio = false;
     tracks[layerIdx].fileName = "EMPTY";
 
@@ -393,7 +372,9 @@ static int quantizeToMasterScale (int rawPitch, int targetRootKey, int targetMod
     return targetRootKey + octaves + bestDegree;
 }
 
-// SUNO-STYLE AI MELODIC COMPOSER
+// -----------------------------------------------------------------------------------------
+// SUNO-STYLE AI MELODIC COMPOSER (CLEAN PIPELINE CONNECTED TO NEURAL ENGINE)
+// -----------------------------------------------------------------------------------------
 void EXAudioProcessor::runCoordinatedAiGeneration()
 {
     patternSteps.clear();
@@ -425,9 +406,9 @@ void EXAudioProcessor::runCoordinatedAiGeneration()
     int mainTrack = loadedTracks[0];
     const auto& trk = tracks[mainTrack];
     double sRate = (getSampleRate() > 0.0) ? getSampleRate() : 44100.0;
-    
-    auto timbre = neuralEngine.extractAcousticTimbre (trk.buffer.getReadPointer(0), 
-                                                      std::min(trk.buffer.getNumSamples(), 44100 * 2), 
+
+    auto timbre = neuralEngine.extractAcousticTimbre (trk.buffer.getReadPointer (0),
+                                                      std::min (trk.buffer.getNumSamples(), 44100 * 2),
                                                       sRate);
 
     int seed = rng.nextInt();
@@ -440,7 +421,7 @@ void EXAudioProcessor::runCoordinatedAiGeneration()
         FlipStep s;
         s.stepIndex = note.stepIndex;
         s.trackIdx = mainTrack;
-        s.sliceIdx = rng.nextInt (std::max(1, static_cast<int> (trk.sliceMarkers.size())));
+        s.sliceIdx = rng.nextInt (std::max (1, static_cast<int> (trk.sliceMarkers.size())));
         s.isGate = true;
         s.velocity = note.velocity;
         s.pan = note.pan;
