@@ -393,9 +393,7 @@ static int quantizeToMasterScale (int rawPitch, int targetRootKey, int targetMod
     return targetRootKey + octaves + bestDegree;
 }
 
-// -----------------------------------------------------------------------------------------
-// SUNO-STYLE AI MELODIC COMPOSER (GENERATES BRAND-NEW INSPIRED THEMES FROM SCRATCH)
-// -----------------------------------------------------------------------------------------
+// SUNO-STYLE AI MELODIC COMPOSER
 void EXAudioProcessor::runCoordinatedAiGeneration()
 {
     patternSteps.clear();
@@ -416,15 +414,14 @@ void EXAudioProcessor::runCoordinatedAiGeneration()
     juce::Random rng;
     activeDiceNumber = 1 + rng.nextInt (6);
 
-    // Initialize 64 steps blank
-    patternSteps.resize (64);
     for (int i = 0; i < 64; ++i)
     {
-        patternSteps[i].isGate = false;
-        patternSteps[i].stepIndex = i;
+        FlipStep blankStep;
+        blankStep.stepIndex = i;
+        blankStep.isGate = false;
+        patternSteps.push_back (blankStep);
     }
 
-    // 1. Acoustic Timbre Extraction: Listen to the input sample
     int mainTrack = loadedTracks[0];
     const auto& trk = tracks[mainTrack];
     double sRate = (getSampleRate() > 0.0) ? getSampleRate() : 44100.0;
@@ -433,25 +430,23 @@ void EXAudioProcessor::runCoordinatedAiGeneration()
                                                       std::min(trk.buffer.getNumSamples(), 44100 * 2), 
                                                       sRate);
 
-    // 2. Compose Fresh Inspired Melody Arc via Neural Composer
     int seed = rng.nextInt();
     auto composedNotes = neuralEngine.composeInspiredMelody (timbre, masterTargetScaleMode, seed);
 
-    // 3. Map Composed Notes to Organic Acoustic Tone
     for (const auto& note : composedNotes)
     {
         if (note.stepIndex < 0 || note.stepIndex >= 64) continue;
 
         FlipStep s;
+        s.stepIndex = note.stepIndex;
         s.trackIdx = mainTrack;
-        s.sliceIdx = rng.nextInt (std::max(1, (int) trk.sliceMarkers.size()));
+        s.sliceIdx = rng.nextInt (std::max(1, static_cast<int> (trk.sliceMarkers.size())));
         s.isGate = true;
         s.velocity = note.velocity;
         s.pan = note.pan;
         s.distanceDepth = 0.1f;
         s.isReverse = false;
 
-        // Accurate Semitone Transposition Lock
         int targetMidi = 60 + masterTargetKey + note.scaleDegree;
         int quantizedMidi = quantizeToMasterScale (targetMidi, masterTargetKey, masterTargetScaleMode);
 
@@ -460,7 +455,7 @@ void EXAudioProcessor::runCoordinatedAiGeneration()
         while (pitchOffset > 8)  pitchOffset -= 12;
 
         s.pitchOffset = pitchOffset;
-        patternSteps[(size_t) note.stepIndex] = s;
+        patternSteps[static_cast<size_t> (note.stepIndex)] = s;
     }
 
     renderMasterPreviewBuffer();
@@ -505,14 +500,13 @@ void EXAudioProcessor::triggerNewSliceVoice (int trkIdx, int sliceIdx, int pitch
     v.fadeStep = 1.0f / 256.0f;
 }
 
-// CONTINUOUS ACOUSTIC LEGATO FLOW RENDERER (NO CHOPPY GAPS)
 void EXAudioProcessor::renderMasterPreviewBuffer()
 {
     int curBpm = std::max (60, masterTargetBpm);
     double stepSec = (60.0 / curBpm) * 0.25;
     if (halfTimeMode) stepSec *= 2.0;
     int curSamplesPerStep = static_cast<int> (stepSec * getSampleRate());
-    int total = curSamplesPerStep * 64; // FULL 4 BARS
+    int total = curSamplesPerStep * 64;
 
     juce::AudioBuffer<float> tempBuffer (2, total);
     tempBuffer.clear();
@@ -544,7 +538,6 @@ void EXAudioProcessor::renderMasterPreviewBuffer()
                 if (halfTimeMode) pRatio *= 0.5;
 
                 int writeStart = step * curSamplesPerStep;
-                // Notes sustain naturally into the next phrase (Zero Dead Silence Gaps)
                 int renderLength = std::min (curSamplesPerStep * 5, total - writeStart);
                 double rPos = start;
 
@@ -560,7 +553,6 @@ void EXAudioProcessor::renderMasterPreviewBuffer()
                     {
                         if (writeStart + i < total)
                         {
-                            // Expressive acoustic envelope with gentle decay
                             float env = 1.0f;
                             if (i < 160)
                                 env = 0.5f * (1.0f - std::cos (juce::MathConstants<float>::pi * i / 160.0f));
@@ -696,14 +688,14 @@ juce::StringArray EXAudioProcessor::exportCurrentAsStems()
 
         for (int step = 0; step < 64; ++step)
         {
-            const auto& s = patternSteps[(size_t) step];
+            const auto& s = patternSteps[static_cast<size_t> (step)];
             if (s.isGate && s.trackIdx == l)
             {
                 const auto& trk = tracks[l];
-                if (s.sliceIdx < (int) trk.sliceMarkers.size() && trk.buffer.getNumSamples() > 0)
+                if (s.sliceIdx < static_cast<int> (trk.sliceMarkers.size()) && trk.buffer.getNumSamples() > 0)
                 {
-                    int start = trk.sliceMarkers[(size_t) s.sliceIdx];
-                    int end = (s.sliceIdx + 1 < (int) trk.sliceMarkers.size()) ? trk.sliceMarkers[(size_t) s.sliceIdx + 1] : trk.buffer.getNumSamples();
+                    int start = trk.sliceMarkers[static_cast<size_t> (s.sliceIdx)];
+                    int end = (s.sliceIdx + 1 < static_cast<int> (trk.sliceMarkers.size())) ? trk.sliceMarkers[static_cast<size_t> (s.sliceIdx + 1)] : trk.buffer.getNumSamples();
 
                     double pRatio = std::pow (2.0, s.pitchOffset / 12.0);
                     if (halfTimeMode) pRatio *= 0.5;
@@ -714,7 +706,7 @@ juce::StringArray EXAudioProcessor::exportCurrentAsStems()
 
                     for (int i = 0; i < renderLength; ++i)
                     {
-                        int curR = (int) rPos;
+                        int curR = static_cast<int> (rPos);
                         if (curR < end && curR < trk.buffer.getNumSamples() - 1 && writeStart + i < total)
                         {
                             float env = 1.0f;
