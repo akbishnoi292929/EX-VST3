@@ -28,6 +28,8 @@ jobs:
         curl -L -o onnxruntime-win-x64.zip https://github.com/microsoft/onnxruntime/releases/download/v1.17.1/onnxruntime-win-x64-1.17.1.zip
         7z x onnxruntime-win-x64.zip -oThirdParty
         mv ThirdParty/onnxruntime-win-x64-1.17.1 ThirdParty/onnxruntime
+        # Copy DLL to system directory so juce_vst3_helper never crashes on load
+        cp ThirdParty/onnxruntime/lib/onnxruntime.dll C:/Windows/System32/
 
     - name: Cache JUCE Source
       uses: actions/cache@v4
@@ -61,10 +63,15 @@ jobs:
         cmake -B build
         -DCMAKE_BUILD_TYPE=Release
         -DONNXRUNTIME_ROOT_DIR="${{ github.workspace }}/ThirdParty/onnxruntime"
+        -DJUCE_BUILD_EXTRAS=OFF
+        -DJUCE_BUILD_EXAMPLES=OFF
         -G "Ninja"
 
     - name: Build VST3 Target Only
-      run: cmake --build build --config Release --target EX_VST3 --parallel
+      shell: bash
+      run: |
+        export PATH="${{ github.workspace }}/ThirdParty/onnxruntime/lib:$PATH"
+        cmake --build build --config Release --target EX_VST3 --parallel
 
     - name: Bundle Heavy AI Models & Runtime DLLs into VST3 Package
       shell: bash
