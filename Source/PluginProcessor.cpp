@@ -355,7 +355,7 @@ static int quantizeToMasterScale (int rawPitch, int targetRootKey, int targetMod
     return targetRootKey + octaves + bestDegree;
 }
 
-// FULLY UNPREDICTABLE MULTI-LAYER GENERATIVE ENGINE (NOTHING IS HARDCODED)
+// FULLY ADAPTIVE GENERATIVE ENGINE (HANDLES 1 LAYER SOLO AS BEAUTIFULLY AS 3 LAYERS)
 void EXAudioProcessor::runCoordinatedAiGeneration()
 {
     patternSteps.clear();
@@ -378,7 +378,7 @@ void EXAudioProcessor::runCoordinatedAiGeneration()
 
     int progressionType = rng.nextInt (6);
 
-    // Shuffle layers on EVERY single roll so any layer can become the lead
+    // Shuffle only whatever tracks the artist has actually loaded
     std::vector<int> shuffledLayers = loadedTracks;
     for (int i = (int) shuffledLayers.size() - 1; i > 0; --i)
     {
@@ -386,12 +386,7 @@ void EXAudioProcessor::runCoordinatedAiGeneration()
         std::swap (shuffledLayers[i], shuffledLayers[j]);
     }
 
-    // Dynamic bar leader mapping: EACH bar randomly chooses which layer takes the spotlight
-    int barLeaders[4];
-    for (int b = 0; b < 4; ++b)
-    {
-        barLeaders[b] = shuffledLayers[(size_t) rng.nextInt ((int) shuffledLayers.size())];
-    }
+    int numLoaded = (int) loadedTracks.size();
 
     // 64 STEPS (FULL 4 BARS)
     for (int step = 0; step < 64; ++step)
@@ -402,38 +397,46 @@ void EXAudioProcessor::runCoordinatedAiGeneration()
         int chordRoot = AiMatrixData::BillboardTrapChordChains[progressionType][bar % 4];
 
         bool isPlay = false;
-        int activeTrack = barLeaders[bar];
+        int activeTrack = loadedTracks[0];
         int scaleStepOffset = 0;
 
-        // Dynamic layer collaboration within the bar:
-        // Downbeats belong to bar leader, but syncopations can come from ANY other loaded layer
+        // Dynamic layer routing based on whether 1, 2, or 3 layers are present
+        if (numLoaded == 1)
+        {
+            // SOLO LAYER WORKFLOW: Pure single loop moulding
+            activeTrack = loadedTracks[0];
+        }
+        else
+        {
+            // MULTI-LAYER WORKFLOW: Free-flowing interchange between available layers
+            activeTrack = shuffledLayers[(size_t) rng.nextInt (numLoaded)];
+        }
+
+        const auto& trk = tracks[activeTrack];
+        int totalSlices = (int) trk.sliceMarkers.size();
+
+        // Rhythmic Phrasing: Downbeats, Syncopated Off-beats, Turnaround fills
         if (stepInBar == 0 || stepInBar == 6 || stepInBar == 12)
         {
             isPlay = true;
-            activeTrack = (rng.nextFloat() > 0.30f) ? barLeaders[bar] 
-                                                    : shuffledLayers[(size_t) rng.nextInt ((int) shuffledLayers.size())];
             scaleStepOffset = chordRoot;
             s.pan = ((rng.nextFloat() * 0.4f) - 0.2f);
-            s.velocity = 0.92f + (rng.nextFloat() * 0.08f);
+            s.velocity = 0.94f + (rng.nextFloat() * 0.06f);
             s.distanceDepth = 0.05f;
         }
         else if (stepInBar == 8)
         {
-            // Spontaneous harmonic answer from another layer
             isPlay = true;
-            activeTrack = shuffledLayers[(size_t) rng.nextInt ((int) shuffledLayers.size())];
             scaleStepOffset = chordRoot + AiMatrixData::DiatonicScaleSteps[2 + rng.nextInt (3)];
             s.pan = (rng.nextFloat() > 0.5f) ? 0.35f : -0.35f;
-            s.velocity = 0.85f + (rng.nextFloat() * 0.08f);
+            s.velocity = 0.86f + (rng.nextFloat() * 0.08f);
             s.distanceDepth = 0.20f;
         }
         else if (stepInBar == 14 && (bar == 1 || bar == 3))
         {
-            // Tasteful turnaround note
             if (rng.nextFloat() > 0.25f)
             {
                 isPlay = true;
-                activeTrack = shuffledLayers[(size_t) rng.nextInt ((int) shuffledLayers.size())];
                 scaleStepOffset = (bar == 3) ? 0 : chordRoot + AiMatrixData::DiatonicScaleSteps[6];
                 s.pan = (bar == 1) ? 0.50f : -0.50f;
                 s.velocity = 0.80f + (rng.nextFloat() * 0.08f);
@@ -441,11 +444,23 @@ void EXAudioProcessor::runCoordinatedAiGeneration()
             }
         }
 
-        const auto& trk = tracks[activeTrack];
-        int totalSlices = (int) trk.sliceMarkers.size();
-        
-        // Randomly explore different anatomical parts of this sample on each trigger
-        int activeSlice = (totalSlices > 0) ? rng.nextInt (totalSlices) : 0;
+        // Slice Selection: If solo, explore different parts across the 4 bars smoothly
+        int activeSlice = 0;
+        if (totalSlices > 0)
+        {
+            if (numLoaded == 1)
+            {
+                // Traverse sample anatomy: Bar 0 uses front cuts, Bar 1/2 uses body cuts, Bar 3 uses tail
+                int zoneSize = std::max (1, totalSlices / 3);
+                if (bar == 0)      activeSlice = rng.nextInt (zoneSize);
+                else if (bar < 3)  activeSlice = std::min (totalSlices - 1, zoneSize + rng.nextInt (zoneSize));
+                else               activeSlice = std::min (totalSlices - 1, (zoneSize * 2) + rng.nextInt (std::max (1, totalSlices - (zoneSize * 2))));
+            }
+            else
+            {
+                activeSlice = rng.nextInt (totalSlices);
+            }
+        }
 
         s.trackIdx = activeTrack;
         s.sliceIdx = activeSlice;
