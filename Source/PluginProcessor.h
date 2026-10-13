@@ -32,7 +32,7 @@ struct AudioLayerTrack
 {
     juce::AudioSampleBuffer buffer;
     std::vector<int> sliceMarkers;
-    std::vector<NeuralAudioEngine::HarmonicEmbedding> sliceEmbeddings;
+    NeuralAudioEngine::AcousticTimbreProfile timbreProfile;
     int sourceBpm = 120;
     int sourceKey = 0;
     int sourceScaleMode = 0;
