@@ -24,7 +24,7 @@ endif()
 
 juce_add_plugin(EX
     COMPANY_NAME "HeartlessAudio"
-    IS_SYNTH FALSE
+    IS_SYNTH TRUE
     NEEDS_MIDI_INPUT TRUE
     NEEDS_MIDI_OUTPUT TRUE
     IS_MIDI_EFFECT FALSE
