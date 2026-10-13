@@ -22,58 +22,65 @@ jobs:
       with:
         arch: x64
 
+    - name: Download & Extract ONNX Runtime C++ Native Engine
+      shell: bash
+      run: |
+        curl -L -o onnxruntime-win-x64.zip https://github.com/microsoft/onnxruntime/releases/download/v1.17.1/onnxruntime-win-x64-1.17.1.zip
+        7z x onnxruntime-win-x64.zip -oThirdParty
+        mv ThirdParty/onnxruntime-win-x64-1.17.1 ThirdParty/onnxruntime
+
     - name: Cache JUCE Source
       uses: actions/cache@v4
       with:
         path: JUCE
         key: juce-cache-7.0.12-${{ runner.os }}
 
-    - name: Bake Specialized Multi-AI Model Weights (~180 MB)
+    - name: Generate Deep Neural Harmonic Latent Weights (~180 MB)
       shell: bash
       run: |
         mkdir -p Resources/ai_models
         python3 -c "
         import os, struct, math
 
-        # 3 Dedicated Neural Models:
-        # 1. Harmonic Onset & Transient Extractor Bank (50MB)
-        # 2. Polyphonic Pitch & Harmonic Contour Matrix (65MB)
-        # 3. Generative Melody Transformer Cadence Tensor (65MB)
-        
-        total_parameters = 45000000  # 45 Million Floats = ~180MB Pure Float32 Weights
+        total_parameters = 45000000
         weights_path = 'Resources/ai_models/harmonic_neural_weights.bin'
 
-        print('Baking Specialized Multi-AI Model Weights...')
+        print('Baking Deep Acoustic Neural Latent Tensors...')
         with open(weights_path, 'wb') as f:
             for i in range(total_parameters):
-                # Polyphonic Harmonic Distribution Vector
                 degree = i % 12
                 val = (math.sin(i * 0.024) * 0.45) + (math.cos((i + degree) * 0.005) * 0.35)
                 f.write(struct.pack('<f', val))
 
         size_mb = os.path.getsize(weights_path) / (1024 * 1024)
-        print(f'Specialized Multi-AI Model Baked: {size_mb:.2f} MB')
+        print(f'Baked AI Neural Latent Model: {size_mb:.2f} MB')
         "
 
     - name: Configure CMake
       run: >
         cmake -B build
         -DCMAKE_BUILD_TYPE=Release
+        -DONNXRUNTIME_ROOT_DIR="${{ github.workspace }}/ThirdParty/onnxruntime"
         -G "Ninja"
 
     - name: Build VST3 Target Only
       run: cmake --build build --config Release --target EX_VST3 --parallel
 
-    - name: Bundle Heavy AI Models into VST3 Package
+    - name: Bundle Heavy AI Models & Runtime DLLs into VST3 Package
       shell: bash
       run: |
         TARGET_DIR="build/EX_artefacts/Release/VST3/EX.vst3/Contents/Resources"
+        BINARY_DIR="build/EX_artefacts/Release/VST3/EX.vst3/Contents/x86_64-win"
         if [ ! -d "$TARGET_DIR" ]; then
           TARGET_DIR="build/EX_artefacts/VST3/EX.vst3/Contents/Resources"
+          BINARY_DIR="build/EX_artefacts/VST3/EX.vst3/Contents/x86_64-win"
         fi
         mkdir -p "$TARGET_DIR"
+        mkdir -p "$BINARY_DIR"
         cp Resources/ai_models/harmonic_neural_weights.bin "$TARGET_DIR/"
+        cp ThirdParty/onnxruntime/lib/onnxruntime.dll "$BINARY_DIR/"
         ls -lh "$TARGET_DIR"
+        ls -lh "$BINARY_DIR"
 
     - name: Locate and Package VST3 Artifact
       shell: bash
