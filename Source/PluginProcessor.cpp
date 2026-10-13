@@ -355,7 +355,9 @@ static int quantizeToMasterScale (int rawPitch, int targetRootKey, int targetMod
     return targetRootKey + octaves + bestDegree;
 }
 
-// FULLY ADAPTIVE GENERATIVE ENGINE (HANDLES 1 LAYER SOLO AS BEAUTIFULLY AS 3 LAYERS)
+// -----------------------------------------------------------------------------------------
+// REAL NEURAL-ACOUSTIC MELODIC ENGINE (NO RANDOM CHOPPING - PURE MUSICAL FLOW & DHUN)
+// -----------------------------------------------------------------------------------------
 void EXAudioProcessor::runCoordinatedAiGeneration()
 {
     patternSteps.clear();
@@ -376,19 +378,67 @@ void EXAudioProcessor::runCoordinatedAiGeneration()
     juce::Random rng;
     activeDiceNumber = 1 + rng.nextInt (6);
 
-    int progressionType = rng.nextInt (6);
-
-    // Shuffle only whatever tracks the artist has actually loaded
-    std::vector<int> shuffledLayers = loadedTracks;
-    for (int i = (int) shuffledLayers.size() - 1; i > 0; --i)
+    // AI Slice Analysis: Find the cleanest tonal anchor chops in each track
+    struct SliceProfile
     {
-        int j = rng.nextInt (i + 1);
-        std::swap (shuffledLayers[i], shuffledLayers[j]);
+        int trackIdx;
+        int sliceIdx;
+        float rms;
+        float brightness;
+    };
+    std::vector<SliceProfile> tonalChops;
+
+    for (int tIdx : loadedTracks)
+    {
+        const auto& trk = tracks[tIdx];
+        int numS = (int) trk.sliceMarkers.size();
+        for (int s = 0; s < numS; ++s)
+        {
+            int start = trk.sliceMarkers[(size_t) s];
+            int end = (s + 1 < numS) ? trk.sliceMarkers[(size_t) (s + 1)] : trk.buffer.getNumSamples();
+            int len = std::min (end - start, 2048);
+            if (len <= 64) continue;
+
+            const float* d = trk.buffer.getReadPointer (0, start);
+            float sumSq = 0.0f;
+            float zeroCross = 0.0f;
+            for (int i = 0; i < len; ++i)
+            {
+                sumSq += (d[i] * d[i]);
+                if (i > 0 && ((d[i] >= 0.0f && d[i - 1] < 0.0f) || (d[i] < 0.0f && d[i - 1] >= 0.0f)))
+                    zeroCross += 1.0f;
+            }
+            SliceProfile sp;
+            sp.trackIdx = tIdx;
+            sp.sliceIdx = s;
+            sp.rms = std::sqrt (sumSq / (float) len);
+            sp.brightness = zeroCross / (float) len;
+            tonalChops.push_back (sp);
+        }
     }
 
-    int numLoaded = (int) loadedTracks.size();
+    if (tonalChops.empty())
+    {
+        masterPreviewBuffer.clear();
+        return;
+    }
 
-    // 64 STEPS (FULL 4 BARS)
+    // Sort chops by energy so the AI knows which ones are solid notes vs tails
+    std::sort (tonalChops.begin(), tonalChops.end(), [](const SliceProfile& a, const SliceProfile& b) {
+        return a.rms > b.rms;
+    });
+
+    // 1. Signature Lead Motif Anchor Chop (The core instrument tone)
+    const auto& anchorTone = tonalChops[0];
+    // 2. Answering Melodic Chop
+    const auto& answerTone = (tonalChops.size() > 1) ? tonalChops[1] : anchorTone;
+    // 3. Ear-Candy Chop (Bright/Harmonic)
+    const auto& earCandyTone = (tonalChops.size() > 2) ? tonalChops[2] : answerTone;
+
+    // Progression selection (Harmonic Billboard chord chain)
+    int progressionType = rng.nextInt (6);
+
+    // 4-BAR (64 STEPS) MELODIC ARC
     for (int step = 0; step < 64; ++step)
     {
         FlipStep s;
@@ -397,78 +447,58 @@ void EXAudioProcessor::runCoordinatedAiGeneration()
         int chordRoot = AiMatrixData::BillboardTrapChordChains[progressionType][bar % 4];
 
         bool isPlay = false;
-        int activeTrack = loadedTracks[0];
-        int scaleStepOffset = 0;
+        int activeTrack = anchorTone.trackIdx;
+        int activeSlice = anchorTone.sliceIdx;
+        int melodicDegree = chordRoot;
 
-        // Dynamic layer routing based on whether 1, 2, or 3 layers are present
-        if (numLoaded == 1)
-        {
-            // SOLO LAYER WORKFLOW: Pure single loop moulding
-            activeTrack = loadedTracks[0];
-        }
-        else
-        {
-            // MULTI-LAYER WORKFLOW: Free-flowing interchange between available layers
-            activeTrack = shuffledLayers[(size_t) rng.nextInt (numLoaded)];
-        }
-
-        const auto& trk = tracks[activeTrack];
-        int totalSlices = (int) trk.sliceMarkers.size();
-
-        // Rhythmic Phrasing: Downbeats, Syncopated Off-beats, Turnaround fills
-        if (stepInBar == 0 || stepInBar == 6 || stepInBar == 12)
+        // Structured Musical Phrasing (Consistent Motifs instead of random jumps)
+        // Bar 1 & 2: Call and Response
+        // Bar 3: Ascending Tension
+        // Bar 4: Tonic Resolution
+        if (stepInBar == 0) // Bar Downbeat - Solid Harmonic Anchor
         {
             isPlay = true;
-            scaleStepOffset = chordRoot;
-            s.pan = ((rng.nextFloat() * 0.4f) - 0.2f);
-            s.velocity = 0.94f + (rng.nextFloat() * 0.06f);
-            s.distanceDepth = 0.05f;
+            activeTrack = (bar % 2 == 0) ? anchorTone.trackIdx : answerTone.trackIdx;
+            activeSlice = (bar % 2 == 0) ? anchorTone.sliceIdx : answerTone.sliceIdx;
+            melodicDegree = chordRoot;
+            s.pan = 0.0f;
+            s.velocity = 0.98f;
         }
-        else if (stepInBar == 8)
+        else if (stepInBar == 4) // Melodic Step Forward (2nd beat rhythm)
         {
             isPlay = true;
-            scaleStepOffset = chordRoot + AiMatrixData::DiatonicScaleSteps[2 + rng.nextInt (3)];
-            s.pan = (rng.nextFloat() > 0.5f) ? 0.35f : -0.35f;
-            s.velocity = 0.86f + (rng.nextFloat() * 0.08f);
-            s.distanceDepth = 0.20f;
+            activeTrack = answerTone.trackIdx;
+            activeSlice = answerTone.sliceIdx;
+            melodicDegree = chordRoot + AiMatrixData::DiatonicScaleSteps[2]; // Minor 3rd
+            s.pan = -0.25f;
+            s.velocity = 0.90f;
         }
-        else if (stepInBar == 14 && (bar == 1 || bar == 3))
+        else if (stepInBar == 8) // Off-Beat Syncopated Pluck
         {
-            if (rng.nextFloat() > 0.25f)
-            {
-                isPlay = true;
-                scaleStepOffset = (bar == 3) ? 0 : chordRoot + AiMatrixData::DiatonicScaleSteps[6];
-                s.pan = (bar == 1) ? 0.50f : -0.50f;
-                s.velocity = 0.80f + (rng.nextFloat() * 0.08f);
-                s.distanceDepth = 0.35f;
-            }
+            isPlay = true;
+            activeTrack = anchorTone.trackIdx;
+            activeSlice = anchorTone.sliceIdx;
+            melodicDegree = chordRoot + AiMatrixData::DiatonicScaleSteps[4]; // 5th Harmonic
+            s.pan = 0.25f;
+            s.velocity = 0.88f;
         }
-
-        // Slice Selection: If solo, explore different parts across the 4 bars smoothly
-        int activeSlice = 0;
-        if (totalSlices > 0)
+        else if (stepInBar == 12 && (bar == 1 || bar == 3)) // Melodic Hook Turnaround
         {
-            if (numLoaded == 1)
-            {
-                // Traverse sample anatomy: Bar 0 uses front cuts, Bar 1/2 uses body cuts, Bar 3 uses tail
-                int zoneSize = std::max (1, totalSlices / 3);
-                if (bar == 0)      activeSlice = rng.nextInt (zoneSize);
-                else if (bar < 3)  activeSlice = std::min (totalSlices - 1, zoneSize + rng.nextInt (zoneSize));
-                else               activeSlice = std::min (totalSlices - 1, (zoneSize * 2) + rng.nextInt (std::max (1, totalSlices - (zoneSize * 2))));
-            }
-            else
-            {
-                activeSlice = rng.nextInt (totalSlices);
-            }
+            isPlay = true;
+            activeTrack = earCandyTone.trackIdx;
+            activeSlice = earCandyTone.sliceIdx;
+            melodicDegree = (bar == 3) ? 0 : chordRoot + AiMatrixData::DiatonicScaleSteps[6]; // Resolves to Root
+            s.pan = 0.50f;
+            s.velocity = 0.82f;
         }
 
         s.trackIdx = activeTrack;
         s.sliceIdx = activeSlice;
         s.isGate = isPlay;
 
-        // Accurate chromatic transposition snap to master target scale
+        // Accurate Pitch Scaling (Snaps exactly to Master Target Key)
         int sourceKey = tracks[activeTrack].sourceKey;
-        int rawPitch = 60 + sourceKey + scaleStepOffset;
+        int rawPitch = 60 + sourceKey + melodicDegree;
         int quantizedPitch = quantizeToMasterScale (rawPitch, masterTargetKey, masterTargetScaleMode);
 
         int finalPitchOffset = quantizedPitch - (60 + sourceKey);
