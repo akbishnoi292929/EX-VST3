@@ -123,7 +123,7 @@ static int snapToZeroCrossing (const juce::AudioBuffer<float>& buf, int targetSa
     return bestSample;
 }
 
-// ACOUSTIC GUITAR HARMONIC BODY DETECTOR (Filters out high-frequency fret click/pick noise)
+// ACOUSTIC GUITAR HARMONIC BODY DETECTOR (No Pick Clicks)
 void EXAudioProcessor::applyGridSlicingToLayer (int layerIdx, GridDivision div)
 {
     if (layerIdx < 0 || layerIdx >= 3) return;
@@ -143,14 +143,12 @@ void EXAudioProcessor::applyGridSlicingToLayer (int layerIdx, GridDivision div)
         std::vector<float> bodyEnergyProfile;
         float prevLowPass = 0.0f;
 
-        // Smooth low-pass acoustic envelope follower (Focuses on guitar tonal notes, rejects 3kHz+ fret clicks)
         for (int i = 0; i < total - window; i += window)
         {
             float energy = 0.0f;
             for (int k = 0; k < window; ++k)
             {
                 float smp = d[i + k];
-                // 1-pole lowpass filter to remove pick click
                 prevLowPass = prevLowPass + 0.18f * (smp - prevLowPass);
                 energy += (prevLowPass * prevLowPass);
             }
@@ -163,7 +161,6 @@ void EXAudioProcessor::applyGridSlicingToLayer (int layerIdx, GridDivision div)
             int samplePos = (int) p * window;
             float surge = bodyEnergyProfile[p] - bodyEnergyProfile[p - 1];
 
-            // Tonal attack threshold: Catches actual guitar plucks and chords
             if (surge > 0.035f && bodyEnergyProfile[p] > 0.045f && (samplePos - lastCut) > minDistance)
             {
                 track.sliceMarkers.push_back (snapToZeroCrossing (track.buffer, samplePos));
@@ -259,12 +256,12 @@ void EXAudioProcessor::runAdvancedAiAudioAnalysis (int layerIdx)
     if (bestIdx < 12)
     {
         track.sourceKey = bestIdx;
-        track.sourceScaleMode = 1;
+        track.sourceScaleMode = 1; // Major
     }
     else
     {
         track.sourceKey = bestIdx - 12;
-        track.sourceScaleMode = 0;
+        track.sourceScaleMode = 0; // Minor
     }
 }
 
@@ -329,8 +326,43 @@ void EXAudioProcessor::rollDiceAndGenerateMasterPattern()
 }
 
 // -----------------------------------------------------------------------------------------
-// STRICT DIATONIC SCALE LOCK (100% ACCURATE TO MASTER TARGET KEY FOR AUTO-KEY DETECTION)
+// UNIVERSAL SCALE-QUANTIZER: SNAPS ANY NOTE 100% INTO USER-SELECTED MASTER TARGET KEY
 // -----------------------------------------------------------------------------------------
+static int quantizeToMasterScale (int rawPitch, int targetRootKey, int targetMode)
+{
+    // Allowed intervals for modes:
+    // 0: Natural Minor, 1: Major, 2: Dorian, 3: Phrygian
+    static const int scaleIntervals[4][7] = {
+        { 0, 2, 3, 5, 7, 8, 10 }, // Minor
+        { 0, 2, 4, 5, 7, 9, 11 }, // Major
+        { 0, 2, 3, 5, 7, 9, 10 }, // Dorian
+        { 0, 1, 3, 5, 7, 8, 10 }  // Phrygian
+    };
+
+    int modeIdx = juce::jlimit (0, 3, targetMode);
+    const int* validDegrees = scaleIntervals[modeIdx];
+
+    // Pitch Class relative to Master Root Key
+    int pitchClass = (rawPitch - targetRootKey) % 12;
+    if (pitchClass < 0) pitchClass += 12;
+
+    // Find nearest valid scale note to avoid ANY out-of-scale dissonant note
+    int bestDegree = validDegrees[0];
+    int minDistance = 999;
+    for (int d = 0; d < 7; ++d)
+    {
+        int dist = std::abs (pitchClass - validDegrees[d]);
+        if (dist < minDistance)
+        {
+            minDistance = dist;
+            bestDegree = validDegrees[d];
+        }
+    }
+
+    int octaves = (rawPitch - targetRootKey - pitchClass);
+    return targetRootKey + octaves + bestDegree;
+}
+
 void EXAudioProcessor::runCoordinatedAiGeneration()
 {
     patternSteps.clear();
@@ -353,12 +385,7 @@ void EXAudioProcessor::runCoordinatedAiGeneration()
 
     int progressionType = rng.nextInt (6);
 
-    // Natural Minor Scale Intervals: [Root, Major 2nd, Minor 3rd, 4th, 5th, Minor 6th, Minor 7th]
-    const int naturalMinorDegrees[7] = { 0, 2, 3, 5, 7, 8, 10 };
-    // Major Scale Intervals: [Root, Major 2nd, Major 3rd, 4th, 5th, Major 6th, Major 7th]
-    const int majorDegrees[7]        = { 0, 2, 4, 5, 7, 9, 11 };
-
-    // Dynamic layer role shuffle
+    // Shuffle layer priority roles on every dice roll
     std::vector<int> roleOrder = loadedTracks;
     for (int i = (int) roleOrder.size() - 1; i > 0; --i)
     {
@@ -393,7 +420,7 @@ void EXAudioProcessor::runCoordinatedAiGeneration()
         bool isPlay = false;
         int activeTrack = leadTrack;
         int activeSlice = 0;
-        int targetPitchDegree = 0;
+        int scaleStepOffset = 0;
 
         if (arrangementStyle == 0)
         {
@@ -416,13 +443,10 @@ void EXAudioProcessor::runCoordinatedAiGeneration()
         int sampleZone = (bar < 2) ? (beat == 0 ? 0 : 1) : (beat == 0 ? 1 : 2);
         activeSlice = pickSliceFromZone (tracks[activeTrack], sampleZone);
 
-        // Strict Diatonic Degree Selection
-        const int* scaleDegrees = (masterTargetScaleMode == 1) ? majorDegrees : naturalMinorDegrees;
-
         if (beat == 0)
         {
             isPlay = true;
-            targetPitchDegree = chordRoot; // Root Anchor
+            scaleStepOffset = chordRoot;
             s.pan = (activeTrack == leadTrack) ? 0.0f : ((bar % 2 == 0) ? -0.25f : 0.25f);
             s.velocity = 0.98f;
             s.distanceDepth = 0.05f;
@@ -430,7 +454,7 @@ void EXAudioProcessor::runCoordinatedAiGeneration()
         else if (beat == 2)
         {
             isPlay = true;
-            targetPitchDegree = chordRoot + scaleDegrees[2 + (step % 3)]; // Harmonic 3rd, 4th, or 5th
+            scaleStepOffset = chordRoot + AiMatrixData::DiatonicScaleSteps[2 + (step % 3)];
             s.pan = (activeTrack == bodyTrack) ? 0.35f : -0.35f;
             s.velocity = 0.88f;
             s.distanceDepth = 0.25f;
@@ -440,7 +464,7 @@ void EXAudioProcessor::runCoordinatedAiGeneration()
             if (rng.nextFloat() > 0.25f)
             {
                 isPlay = true;
-                targetPitchDegree = chordRoot + scaleDegrees[6]; // Leading 7th / Octave resolution
+                scaleStepOffset = chordRoot + AiMatrixData::DiatonicScaleSteps[6];
                 s.pan = (bar == 1) ? 0.60f : -0.60f;
                 s.velocity = 0.82f;
                 s.distanceDepth = 0.45f;
@@ -451,20 +475,19 @@ void EXAudioProcessor::runCoordinatedAiGeneration()
         s.sliceIdx = activeSlice;
         s.isGate = isPlay;
 
-        // EXACT SCALE-SNAP CALCULATION:
-        // Transposes the note so it ALWAYS resolves into Master Target Key (e.g. C# Minor)
+        // 1. Calculate Absolute MIDI Pitch from Source File
         int sourceKey = tracks[activeTrack].sourceKey;
-        int directShift = masterTargetKey - sourceKey;
-        while (directShift < -6) directShift += 12;
-        while (directShift > 6)  directShift -= 12;
+        int rawPitch = 60 + sourceKey + scaleStepOffset;
 
-        // Scale-Quantized final pitch offset
-        int calculatedOffset = directShift + (targetPitchDegree % 12);
-        // Ensure within natural melodic bounds (-12 to +12 semitones)
-        while (calculatedOffset < -8) calculatedOffset += 12;
-        while (calculatedOffset > 8)  calculatedOffset -= 12;
+        // 2. Strict Diatonic Quantization to Master Target Key and Mode
+        int quantizedPitch = quantizeToMasterScale (rawPitch, masterTargetKey, masterTargetScaleMode);
 
-        s.pitchOffset = calculatedOffset;
+        // 3. Final Pitch Offset for Sampler Playback
+        int finalPitchOffset = quantizedPitch - (60 + sourceKey);
+        while (finalPitchOffset < -8) finalPitchOffset += 12;
+        while (finalPitchOffset > 8)  finalPitchOffset -= 12;
+
+        s.pitchOffset = finalPitchOffset;
         s.isReverse = false;
 
         patternSteps.push_back (s);
