@@ -37,7 +37,7 @@ EXAudioProcessor::EXAudioProcessor()
       apvts (*this, nullptr, "Parameters", createParameterLayout())
 {
     formatManager.registerBasicFormats();
-    masterPreviewBuffer.setSize (2, 44100 * 4);
+    masterPreviewBuffer.setSize (2, 44100 * 16);
     masterPreviewBuffer.clear();
 
     for (int i = 0; i < 2; ++i)
@@ -123,7 +123,6 @@ static int snapToZeroCrossing (const juce::AudioBuffer<float>& buf, int targetSa
     return bestSample;
 }
 
-// ACOUSTIC GUITAR HARMONIC BODY DETECTOR (No Pick Clicks)
 void EXAudioProcessor::applyGridSlicingToLayer (int layerIdx, GridDivision div)
 {
     if (layerIdx < 0 || layerIdx >= 3) return;
@@ -137,7 +136,7 @@ void EXAudioProcessor::applyGridSlicingToLayer (int layerIdx, GridDivision div)
         const float* d = track.buffer.getReadPointer (0);
         track.sliceMarkers.push_back (0);
 
-        int minDistance = total / 18;
+        int minDistance = total / 24;
         int window = 384;
 
         std::vector<float> bodyEnergyProfile;
@@ -161,14 +160,14 @@ void EXAudioProcessor::applyGridSlicingToLayer (int layerIdx, GridDivision div)
             int samplePos = (int) p * window;
             float surge = bodyEnergyProfile[p] - bodyEnergyProfile[p - 1];
 
-            if (surge > 0.035f && bodyEnergyProfile[p] > 0.045f && (samplePos - lastCut) > minDistance)
+            if (surge > 0.030f && bodyEnergyProfile[p] > 0.035f && (samplePos - lastCut) > minDistance)
             {
                 track.sliceMarkers.push_back (snapToZeroCrossing (track.buffer, samplePos));
                 lastCut = samplePos;
             }
         }
 
-        if (track.sliceMarkers.size() < 8)
+        if (track.sliceMarkers.size() < 12)
         {
             track.sliceMarkers.clear();
             int stepSize = total / 16;
@@ -256,12 +255,12 @@ void EXAudioProcessor::runAdvancedAiAudioAnalysis (int layerIdx)
     if (bestIdx < 12)
     {
         track.sourceKey = bestIdx;
-        track.sourceScaleMode = 1; // Major
+        track.sourceScaleMode = 1;
     }
     else
     {
         track.sourceKey = bestIdx - 12;
-        track.sourceScaleMode = 0; // Minor
+        track.sourceScaleMode = 0;
     }
 }
 
@@ -325,13 +324,8 @@ void EXAudioProcessor::rollDiceAndGenerateMasterPattern()
     runCoordinatedAiGeneration();
 }
 
-// -----------------------------------------------------------------------------------------
-// UNIVERSAL SCALE-QUANTIZER: SNAPS ANY NOTE 100% INTO USER-SELECTED MASTER TARGET KEY
-// -----------------------------------------------------------------------------------------
 static int quantizeToMasterScale (int rawPitch, int targetRootKey, int targetMode)
 {
-    // Allowed intervals for modes:
-    // 0: Natural Minor, 1: Major, 2: Dorian, 3: Phrygian
     static const int scaleIntervals[4][7] = {
         { 0, 2, 3, 5, 7, 8, 10 }, // Minor
         { 0, 2, 4, 5, 7, 9, 11 }, // Major
@@ -342,11 +336,9 @@ static int quantizeToMasterScale (int rawPitch, int targetRootKey, int targetMod
     int modeIdx = juce::jlimit (0, 3, targetMode);
     const int* validDegrees = scaleIntervals[modeIdx];
 
-    // Pitch Class relative to Master Root Key
     int pitchClass = (rawPitch - targetRootKey) % 12;
     if (pitchClass < 0) pitchClass += 12;
 
-    // Find nearest valid scale note to avoid ANY out-of-scale dissonant note
     int bestDegree = validDegrees[0];
     int minDistance = 999;
     for (int d = 0; d < 7; ++d)
@@ -363,6 +355,7 @@ static int quantizeToMasterScale (int rawPitch, int targetRootKey, int targetMod
     return targetRootKey + octaves + bestDegree;
 }
 
+// FULLY UNPREDICTABLE MULTI-LAYER GENERATIVE ENGINE (NOTHING IS HARDCODED)
 void EXAudioProcessor::runCoordinatedAiGeneration()
 {
     patternSteps.clear();
@@ -385,104 +378,84 @@ void EXAudioProcessor::runCoordinatedAiGeneration()
 
     int progressionType = rng.nextInt (6);
 
-    // Shuffle layer priority roles on every dice roll
-    std::vector<int> roleOrder = loadedTracks;
-    for (int i = (int) roleOrder.size() - 1; i > 0; --i)
+    // Shuffle layers on EVERY single roll so any layer can become the lead
+    std::vector<int> shuffledLayers = loadedTracks;
+    for (int i = (int) shuffledLayers.size() - 1; i > 0; --i)
     {
         int j = rng.nextInt (i + 1);
-        std::swap (roleOrder[i], roleOrder[j]);
+        std::swap (shuffledLayers[i], shuffledLayers[j]);
     }
 
-    int leadTrack     = roleOrder[0];
-    int bodyTrack     = (roleOrder.size() > 1) ? roleOrder[1] : roleOrder[0];
-    int earCandyTrack = (roleOrder.size() > 2) ? roleOrder[2] : bodyTrack;
-
-    auto pickSliceFromZone = [&rng](const AudioLayerTrack& trk, int zoneIndex) -> int
+    // Dynamic bar leader mapping: EACH bar randomly chooses which layer takes the spotlight
+    int barLeaders[4];
+    for (int b = 0; b < 4; ++b)
     {
-        int total = (int) trk.sliceMarkers.size();
-        if (total <= 1) return 0;
-        int zoneSize = std::max (1, total / 3);
+        barLeaders[b] = shuffledLayers[(size_t) rng.nextInt ((int) shuffledLayers.size())];
+    }
 
-        if (zoneIndex == 0)      return rng.nextInt (zoneSize);
-        else if (zoneIndex == 1) return zoneSize + rng.nextInt (zoneSize);
-        else                     return std::min (total - 1, (zoneSize * 2) + rng.nextInt (std::max (1, total - (zoneSize * 2))));
-    };
-
-    int arrangementStyle = rng.nextInt (3);
-
-    for (int step = 0; step < 16; ++step)
+    // 64 STEPS (FULL 4 BARS)
+    for (int step = 0; step < 64; ++step)
     {
         FlipStep s;
-        int bar = step / 4;
-        int beat = step % 4;
-        int chordRoot = AiMatrixData::BillboardTrapChordChains[progressionType][bar];
+        int bar = step / 16;
+        int stepInBar = step % 16;
+        int chordRoot = AiMatrixData::BillboardTrapChordChains[progressionType][bar % 4];
 
         bool isPlay = false;
-        int activeTrack = leadTrack;
-        int activeSlice = 0;
+        int activeTrack = barLeaders[bar];
         int scaleStepOffset = 0;
 
-        if (arrangementStyle == 0)
-        {
-            if (beat == 0)      activeTrack = (bar % 2 == 0) ? leadTrack : bodyTrack;
-            else if (beat == 2) activeTrack = (bar % 2 == 0) ? bodyTrack : earCandyTrack;
-            else                activeTrack = earCandyTrack;
-        }
-        else if (arrangementStyle == 1)
-        {
-            if (beat == 0)      activeTrack = leadTrack;
-            else if (beat == 2) activeTrack = bodyTrack;
-            else                activeTrack = earCandyTrack;
-        }
-        else
-        {
-            if (bar == 0 || bar == 2) activeTrack = (beat == 0) ? bodyTrack : leadTrack;
-            else                      activeTrack = (beat == 0) ? leadTrack : earCandyTrack;
-        }
-
-        int sampleZone = (bar < 2) ? (beat == 0 ? 0 : 1) : (beat == 0 ? 1 : 2);
-        activeSlice = pickSliceFromZone (tracks[activeTrack], sampleZone);
-
-        if (beat == 0)
+        // Dynamic layer collaboration within the bar:
+        // Downbeats belong to bar leader, but syncopations can come from ANY other loaded layer
+        if (stepInBar == 0 || stepInBar == 6 || stepInBar == 12)
         {
             isPlay = true;
+            activeTrack = (rng.nextFloat() > 0.30f) ? barLeaders[bar] 
+                                                    : shuffledLayers[(size_t) rng.nextInt ((int) shuffledLayers.size())];
             scaleStepOffset = chordRoot;
-            s.pan = (activeTrack == leadTrack) ? 0.0f : ((bar % 2 == 0) ? -0.25f : 0.25f);
-            s.velocity = 0.98f;
+            s.pan = ((rng.nextFloat() * 0.4f) - 0.2f);
+            s.velocity = 0.92f + (rng.nextFloat() * 0.08f);
             s.distanceDepth = 0.05f;
         }
-        else if (beat == 2)
+        else if (stepInBar == 8)
         {
+            // Spontaneous harmonic answer from another layer
             isPlay = true;
-            scaleStepOffset = chordRoot + AiMatrixData::DiatonicScaleSteps[2 + (step % 3)];
-            s.pan = (activeTrack == bodyTrack) ? 0.35f : -0.35f;
-            s.velocity = 0.88f;
-            s.distanceDepth = 0.25f;
+            activeTrack = shuffledLayers[(size_t) rng.nextInt ((int) shuffledLayers.size())];
+            scaleStepOffset = chordRoot + AiMatrixData::DiatonicScaleSteps[2 + rng.nextInt (3)];
+            s.pan = (rng.nextFloat() > 0.5f) ? 0.35f : -0.35f;
+            s.velocity = 0.85f + (rng.nextFloat() * 0.08f);
+            s.distanceDepth = 0.20f;
         }
-        else if (beat == 3 && (bar == 1 || bar == 3))
+        else if (stepInBar == 14 && (bar == 1 || bar == 3))
         {
+            // Tasteful turnaround note
             if (rng.nextFloat() > 0.25f)
             {
                 isPlay = true;
-                scaleStepOffset = chordRoot + AiMatrixData::DiatonicScaleSteps[6];
-                s.pan = (bar == 1) ? 0.60f : -0.60f;
-                s.velocity = 0.82f;
-                s.distanceDepth = 0.45f;
+                activeTrack = shuffledLayers[(size_t) rng.nextInt ((int) shuffledLayers.size())];
+                scaleStepOffset = (bar == 3) ? 0 : chordRoot + AiMatrixData::DiatonicScaleSteps[6];
+                s.pan = (bar == 1) ? 0.50f : -0.50f;
+                s.velocity = 0.80f + (rng.nextFloat() * 0.08f);
+                s.distanceDepth = 0.35f;
             }
         }
+
+        const auto& trk = tracks[activeTrack];
+        int totalSlices = (int) trk.sliceMarkers.size();
+        
+        // Randomly explore different anatomical parts of this sample on each trigger
+        int activeSlice = (totalSlices > 0) ? rng.nextInt (totalSlices) : 0;
 
         s.trackIdx = activeTrack;
         s.sliceIdx = activeSlice;
         s.isGate = isPlay;
 
-        // 1. Calculate Absolute MIDI Pitch from Source File
+        // Accurate chromatic transposition snap to master target scale
         int sourceKey = tracks[activeTrack].sourceKey;
         int rawPitch = 60 + sourceKey + scaleStepOffset;
-
-        // 2. Strict Diatonic Quantization to Master Target Key and Mode
         int quantizedPitch = quantizeToMasterScale (rawPitch, masterTargetKey, masterTargetScaleMode);
 
-        // 3. Final Pitch Offset for Sampler Playback
         int finalPitchOffset = quantizedPitch - (60 + sourceKey);
         while (finalPitchOffset < -8) finalPitchOffset += 12;
         while (finalPitchOffset > 8)  finalPitchOffset -= 12;
@@ -541,7 +514,7 @@ void EXAudioProcessor::renderMasterPreviewBuffer()
     double stepSec = (60.0 / curBpm) * 0.25;
     if (halfTimeMode) stepSec *= 2.0;
     int curSamplesPerStep = static_cast<int> (stepSec * getSampleRate());
-    int total = curSamplesPerStep * 16;
+    int total = curSamplesPerStep * 64;
 
     juce::AudioBuffer<float> tempBuffer (2, total);
     tempBuffer.clear();
@@ -558,7 +531,7 @@ void EXAudioProcessor::renderMasterPreviewBuffer()
     const float vol3 = apvts.getRawParameterValue ("VOL_LAYER_3")->load();
     const float layerVols[3] = { vol1, vol2, vol3 };
 
-    for (int step = 0; step < 16; ++step)
+    for (int step = 0; step < 64; ++step)
     {
         const auto& s = patternSteps[(size_t) step];
         if (s.isGate && s.trackIdx >= 0 && s.trackIdx < 3)
@@ -573,7 +546,7 @@ void EXAudioProcessor::renderMasterPreviewBuffer()
                 if (halfTimeMode) pRatio *= 0.5;
 
                 int writeStart = step * curSamplesPerStep;
-                int renderLength = std::min (curSamplesPerStep * 2, total - writeStart);
+                int renderLength = std::min (curSamplesPerStep * 3, total - writeStart);
                 double rPos = start;
 
                 float panAngle = (s.pan + 1.0f) * 0.25f * juce::MathConstants<float>::pi;
@@ -709,7 +682,7 @@ juce::StringArray EXAudioProcessor::exportCurrentAsStems()
     double stepSec = (60.0 / curBpm) * 0.25;
     if (halfTimeMode) stepSec *= 2.0;
     int curSamplesPerStep = static_cast<int> (stepSec * getSampleRate());
-    int total = curSamplesPerStep * 16;
+    int total = curSamplesPerStep * 64;
 
     for (int l = 0; l < 3; ++l)
     {
@@ -721,7 +694,7 @@ juce::StringArray EXAudioProcessor::exportCurrentAsStems()
         juce::AudioBuffer<float> stemBuf (2, total);
         stemBuf.clear();
 
-        for (int step = 0; step < 16; ++step)
+        for (int step = 0; step < 64; ++step)
         {
             const auto& s = patternSteps[(size_t) step];
             if (s.isGate && s.trackIdx == l)
@@ -736,7 +709,7 @@ juce::StringArray EXAudioProcessor::exportCurrentAsStems()
                     if (halfTimeMode) pRatio *= 0.5;
 
                     int writeStart = step * curSamplesPerStep;
-                    int renderLength = std::min (curSamplesPerStep * 2, total - writeStart);
+                    int renderLength = std::min (curSamplesPerStep * 3, total - writeStart);
                     double rPos = start;
 
                     for (int i = 0; i < renderLength; ++i)
@@ -802,7 +775,7 @@ juce::File EXAudioProcessor::exportCurrentAsMidi()
             while (note > 84) note -= 12;
 
             double startTick = static_cast<double> (i * ticksPerStep);
-            double endTick = startTick + (ticksPerStep * 2 - 20);
+            double endTick = startTick + (ticksPerStep * 3 - 20);
 
             int midiPan = juce::jlimit (0, 127, static_cast<int> ((s.pan + 1.0f) * 63.5f));
             trackSeq.addEvent (juce::MidiMessage::controllerEvent (1, 10, midiPan), startTick);
@@ -812,7 +785,7 @@ juce::File EXAudioProcessor::exportCurrentAsMidi()
         }
     }
 
-    double totalLoopTicks = static_cast<double> (16 * ticksPerStep);
+    double totalLoopTicks = static_cast<double> (64 * ticksPerStep);
     trackSeq.addEvent (juce::MidiMessage::endOfTrack(), totalLoopTicks);
     trackSeq.updateMatchedPairs();
     mf.addTrack (trackSeq);
