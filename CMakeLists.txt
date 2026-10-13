@@ -33,8 +33,8 @@ juce_add_plugin(EX
     PRODUCT_NAME "EX"
 )
 
-# Bypass juce_vst3_helper crash during CI build
-juce_enable_vst3_manifest_generation(EX OFF)
+# Disable manifest generation safely in JUCE 7
+set_target_properties(EX PROPERTIES JUCE_VST3_CAN_REPLACE_VST2 OFF)
 
 # Link ONNX Runtime if present
 if(DEFINED ONNXRUNTIME_ROOT_DIR AND EXISTS "${ONNXRUNTIME_ROOT_DIR}")
